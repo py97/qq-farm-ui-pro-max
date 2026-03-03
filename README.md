@@ -241,31 +241,21 @@ ADMIN_PASSWORD='你的强密码' pnpm dev:core
 
 ## 🚀 极简：一键开箱即用部署 (推荐)
 
-> 适合所有用户的最快部署方案。只需一个 `docker-compose.yml` 文件，自动完成数据库初始化。
+> 适合所有用户的最快部署方案。在服务器上执行一条命令，自动下载文件、配置密码、启动所有服务。
 
-### 1. 下载部署文件
-在服务器上创建目录并下载编排文件：
-
+**一条命令搞定：**
 ```bash
-mkdir -p /opt/qq-farm-bot && cd /opt/qq-farm-bot
-
-# 下载 4 个核心文件 (或从项目 deploy/ 目录拷贝)
-# - docker-compose.yml
-# - .env
-# - init-db/01-init.sql
-# - README.md
+curl -fsSL https://raw.githubusercontent.com/smdk000/qq-farm-ui-pro-max/main/deploy/setup.sh | bash
 ```
 
-### 2. 配置密码
-修改 `.env` 文件，设置管理后台密码：
-```env
-ADMIN_PASSWORD=你的密码
-```
+脚本会自动完成：
+1. ✅ 检测并安装 Docker（如果未安装）
+2. ✅ 从 GitHub 下载 `docker-compose.yml` + `.env` + 数据库初始化脚本
+3. ✅ 交互式设置管理密码
+4. ✅ 启动全部 4 个服务（主应用 + MySQL + Redis + 微信协议）
+5. ✅ 显示访问地址和状态
 
-### 3. 一键启动
-```bash
-docker compose up -d
-```
+> 部署文件也可在项目 [`deploy/`](deploy/) 目录中单独查看和下载。
 
 ---
 
