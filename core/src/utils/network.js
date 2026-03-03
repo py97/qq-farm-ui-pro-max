@@ -117,8 +117,11 @@ async function drainQueue() {
         }
         const now = Date.now();
         const elapsed = now - lastSendTimestamp;
-        if (elapsed < RATE_LIMIT_INTERVAL_MS) {
-            await new Promise(r => setTimeout(r, RATE_LIMIT_INTERVAL_MS - elapsed));
+        // Jitter Defense: ±20% 随机抖动 (267ms ~ 401ms)，模糊匀速行为指纹
+        // 防止腾讯行为分析系统因"过匀速"判定为机器人
+        const jitteredInterval = RATE_LIMIT_INTERVAL_MS * (0.8 + Math.random() * 0.4);
+        if (elapsed < jitteredInterval) {
+            await new Promise(r => setTimeout(r, jitteredInterval - elapsed));
         }
 
         // 优先消费紧急队列，但防止完全饿死普通队列 (Anti-Starvation)

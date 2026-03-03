@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <title>系统健壮性与反检测优化方案 v3.9.10</title>
+    <style>
+        :root {
+            --primary: #3b82f6;
+            --bg: #0f172a;
+            --card: #1e293b;
+            --text: #f1f5f9;
+        }
+
+        body {
+            background: var(--bg);
+            color: var(--text);
+            font-family: -apple-system, system-ui;
+            line-height: 1.6;
+            padding: 2rem;
+        }
+
+        .card {
+            background: var(--card);
+            border-radius: 12px;
+            padding: 1.5rem;
+            margin-bottom: 2rem;
+            border-left: 4px solid var(--primary);
+        }
+
+        h1 {
+            color: var(--primary);
+            border-bottom: 2px solid #334155;
+            padding-bottom: 1rem;
+        }
+
+        h2 {
+            color: #60a5fa;
+            margin-top: 0;
+        }
+
+        code {
+            background: #000;
+            color: #10b981;
+            padding: 0.2rem 0.4rem;
+            border-radius: 4px;
+        }
+
+        .impact {
+            background: #1e1b4b;
+            border: 1px solid #312e81;
+            padding: 1rem;
+            border-radius: 8px;
+            margin-top: 1rem;
+        }
+
+        .impact-tag {
+            font-weight: bold;
+            color: #fbbf24;
+        }
+
+        .mermaid {
+            background: white;
+            padding: 1rem;
+            border-radius: 8px;
+            margin: 1rem 0;
+            width: fit-content;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>系统健壮性与反检测优化方案</h1>
+
+    <div class="card">
+        <h2>1. 令牌桶行为指纹混淆 (Jitter Defense)</h2>
+        <p><b>涉及文件：</b><code>network.js</code></p>
+        <p>目前 334ms 的匀速发送理论上会产生明显的人工指纹。我们将引入 ±20% 的随机抖动（Jitter），使得请求在 267ms ~ 401ms 之间随机波动，整体 3QPS 不变但特征完全模糊。</p>
+        <div class="impact">
+            <span class="impact-tag">影响分析：</span>显著提升规避腾讯行为分析系统的能力，防止因为“过匀速”被判定为机器人。
+        </div>
+    </div>
+
+    <div class="card">
+        <h2>2. Worker 状态同步与显式清理</h2>
+        <p><b>涉及文件：</b><code>worker-manager.js</code></p>
+        <p>当子进程由于网络或 400 错误退出后，主进程的 Scheduler 中可能留存针对该子进程的超时任务或心跳任务（残留内存）。</p>
+        <p><b>优化动作：</b>在 <code>child.on('exit')</code> 回调中增加对 <code>managerScheduler</code> 针对该 accountId 资源的遍历式清理。</p>
+        <div class="impact">
+            <span class="impact-tag">影响分析：</span>根除重启后可能产生的资源竞争或内存碎片，提升管理后台长期运行的稳定性。
+        </div>
+    </div>
+
+    <div class="card">
+        <h2>3. 防偷抢收生命周期鲁棒判定</h2>
+        <p><b>涉及文件：</b><code>farm.js</code></p>
+        <p>在高延迟或高频率排队时，地块的 <code>matureInSec</code> 可能会产生正负 5s 的计算误差，导致原 65s 判定误伤。我们将放宽动态上限，并优化
+            <code>Double Check</code> 的 Promise 链逻辑。</p>
+    </div>
+
+    <div class="card">
+        <h2>4. 潜在风险点：操作记录补全</h2>
+        <p>目前 <code>worker-manager</code> 在记录 <code>addAccountLog</code> 时，部分参数（如
+            extra）未经过深拷贝，可能在极端多账号并发写入日志文件时由于对象共享导致数据错乱。我将在实现中一并补全对象序列化保护。</p>
+    </div>
+
+    <script type="module">
+        import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+        mermaid.initialize({ startOnLoad: true, theme: 'dark' });
+    </script>
+</body>
+
+</html>

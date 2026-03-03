@@ -234,6 +234,25 @@ function createScheduler(namespace = 'default') {
         return one.schedulers[0] || { namespace: name, createdAt: Date.now(), taskCount: 0, tasks: [] };
     }
 
+    /**
+     * 遍历式清理：清除所有 taskName 包含指定关键词的定时任务
+     * 用途：Worker 退出时清理所有与该 accountId 相关的残留定时资源
+     * @param {string} keyword - 要匹配的关键词（支持部分匹配）
+     * @returns {number} 清理的任务数量
+     */
+    function clearByKeyword(keyword) {
+        if (!keyword) return 0;
+        const keys = Array.from(timers.keys());
+        let count = 0;
+        for (const key of keys) {
+            if (key.includes(keyword)) {
+                clear(key);
+                count++;
+            }
+        }
+        return count;
+    }
+
     return {
         setTimeoutTask,
         setIntervalTask,
@@ -242,6 +261,7 @@ function createScheduler(namespace = 'default') {
         has,
         getTaskNames,
         getSnapshot,
+        clearByKeyword,
     };
 }
 

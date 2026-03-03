@@ -285,7 +285,10 @@ async function harvestUrgent(landIds) {
 
 /**
  * 防偷抢收函数（60秒施肥并瞬间收获）- 全部使用紧急通道
+ * ANTI_STEAL_MAX_MATURE_SEC = 75s (60s施肥加速 + 10s网络延迟 + 5s计时误差)
  */
+const ANTI_STEAL_MAX_MATURE_SEC = 75;
+
 async function antiStealHarvest(landId) {
     if (!landId) return;
     try {
@@ -324,8 +327,8 @@ async function antiStealHarvest(landId) {
         const nowSec = getServerTimeSec();
         const matureInSec = matureBegin > nowSec ? (matureBegin - nowSec) : 0;
 
-        if (matureInSec <= 0 || matureInSec > 65) {
-            log('防偷', `[保护拦截] 土地#${landId} 发生生命周期漂移(当前距成熟:${matureInSec}s)，判定为玩家人为干预复种或抢收，已免除本次动作，成功保卫化肥资产`);
+        if (matureInSec <= 0 || matureInSec > ANTI_STEAL_MAX_MATURE_SEC) {
+            log('防偷', `[保护拦截] 土地#${landId} 发生生命周期漂移(当前距成熟:${matureInSec}s, 阈值:${ANTI_STEAL_MAX_MATURE_SEC}s)，判定为玩家人为干预复种或抢收，已免除本次动作，成功保卫化肥资产`);
             return;
         }
 

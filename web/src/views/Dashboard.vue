@@ -20,7 +20,6 @@ const bagStore = useBagStore()
 const {
   status,
   logs: statusLogs,
-  accountLogs: statusAccountLogs,
   realtimeConnected,
 } = storeToRefs(statusStore)
 const { currentAccountId, currentAccount } = storeToRefs(accountStore)
@@ -31,15 +30,8 @@ const lastBagFetchAt = ref(0)
 
 const allLogs = computed(() => {
   const sLogs = statusLogs.value || []
-  const aLogs = (statusAccountLogs.value || []).map((l: any) => ({
-    ts: new Date(l.time).getTime(),
-    time: l.time,
-    tag: l.action === 'Error' ? '错误' : '系统',
-    msg: l.reason ? `${l.msg} (${l.reason})` : l.msg,
-    isAccountLog: true,
-  }))
-
-  return [...sLogs, ...aLogs].sort((a: any, b: any) => a.ts - b.ts).filter((l: any) => !l.isAccountLog)
+  // 操作日志直接按时间排序展示，不再混入 accountLogs（系统日志），避免合并后又 filter 掉的无效操作
+  return [...sLogs].sort((a: any, b: any) => a.ts - b.ts)
 })
 
 const filter = useStorage('dashboard_log_filter', {

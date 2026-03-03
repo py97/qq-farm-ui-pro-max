@@ -13,6 +13,9 @@ import { menuRoutes } from '@/router/menu'
 import { useAccountStore } from '@/stores/account'
 import { useAppStore } from '@/stores/app'
 import { useStatusStore } from '@/stores/status'
+import { useAvatar } from '@/utils/avatar'
+
+const { getAvatarUrl, markFailed } = useAvatar()
 
 const accountStore = useAccountStore()
 const statusStore = useStatusStore()
@@ -70,7 +73,7 @@ async function checkConnection() {
       }
     }
     const accountRef = currentAccount.value?.id || currentAccount.value?.uin
-    if (accountRef) {
+    if (accountRef && !realtimeConnected.value) {
       statusStore.connectRealtime(String(accountRef))
     }
   }
@@ -377,10 +380,10 @@ function onNavClick() {
           <div class="flex items-center gap-3 overflow-hidden">
             <div class="h-8 w-8 flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-gray-200 ring-2 ring-white dark:bg-gray-600 dark:ring-gray-700">
               <img
-                v-if="currentAccount?.uin"
-                :src="`https://q1.qlogo.cn/g?b=qq&nk=${currentAccount.uin}&s=100`"
+                v-if="currentAccount && getAvatarUrl(currentAccount)"
+                :src="getAvatarUrl(currentAccount)"
                 class="h-full w-full object-cover"
-                @error="(e) => (e.target as HTMLImageElement).style.display = 'none'"
+                @error="(e) => markFailed((e.target as HTMLImageElement).src)"
               >
               <div v-else class="i-carbon-user text-gray-400" />
             </div>
@@ -415,10 +418,10 @@ function onNavClick() {
               >
                 <div class="h-6 w-6 flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-gray-200 dark:bg-gray-600">
                   <img
-                    v-if="acc.uin"
-                    :src="`https://q1.qlogo.cn/g?b=qq&nk=${acc.uin}&s=100`"
+                    v-if="getAvatarUrl(acc)"
+                    :src="getAvatarUrl(acc)"
                     class="h-full w-full object-cover"
-                    @error="(e) => (e.target as HTMLImageElement).style.display = 'none'"
+                    @error="(e) => markFailed((e.target as HTMLImageElement).src)"
                   >
                   <div v-else class="i-carbon-user text-gray-400" />
                 </div>

@@ -36,6 +36,8 @@ export const useStatusStore = defineStore('status', () => {
   const tokenRef = useStorage('admin_token', '')
 
   let socket: Socket | null = null
+  // 幂等订阅守卫：记录最近一次成功订阅的账号 ID，避免重复 subscribe 触发 snapshot 覆盖
+  let lastSubscribedAccountId = ''
 
   function normalizeStatusPayload(input: any) {
     return (input && typeof input === 'object') ? { ...input } : {}
@@ -89,13 +91,55 @@ export const useStatusStore = defineStore('status', () => {
   function handleRealtimeLogsSnapshot(payload: any) {
     const body = (payload && typeof payload === 'object') ? payload : {}
     const list = Array.isArray(body.logs) ? body.logs : []
-    logs.value = list.map((item: any) => normalizeLogEntry(item))
+    // 若快照为空且当前已有日志，不替换，避免误清空
+    if (list.length === 0 && logs.value.length > 0)
+      return
+
+    const normalized = list.map((item: any) => normalizeLogEntry(item))
+    // 首次加载（本地无日志）直接赋值
+    if (logs.value.length === 0) {
+      logs.value = normalized
+      return
+    }
+
+    // 合并去重：使用 ts_msg 作为唯一键，保留已有日志 + 补充新快照
+    const existingKeys = new Set(logs.value.map((l: any) => `${l.ts}_${l.msg}`))
+    const merged = [...logs.value]
+    for (const entry of normalized) {
+      const key = `${entry.ts}_${entry.msg}`
+      if (!existingKeys.has(key)) {
+        merged.push(entry)
+        existingKeys.add(key)
+      }
+    }
+    // 按时间排序并限制总量
+    merged.sort((a: any, b: any) => a.ts - b.ts)
+    logs.value = merged.length > 1000 ? merged.slice(-1000) : merged
   }
 
   function handleRealtimeAccountLogsSnapshot(payload: any) {
     const body = (payload && typeof payload === 'object') ? payload : {}
     const list = Array.isArray(body.logs) ? body.logs : []
-    accountLogs.value = list
+    if (list.length === 0 && accountLogs.value.length > 0)
+      return
+
+    // 首次加载直接赋值
+    if (accountLogs.value.length === 0) {
+      accountLogs.value = list
+      return
+    }
+
+    // 合并去重：使用 time_msg 作为唯一键
+    const existingKeys = new Set(accountLogs.value.map((l: any) => `${l.time}_${l.msg}`))
+    const merged = [...accountLogs.value]
+    for (const entry of list) {
+      const key = `${entry.time}_${entry.msg}`
+      if (!existingKeys.has(key)) {
+        merged.push(entry)
+        existingKeys.add(key)
+      }
+    }
+    accountLogs.value = merged.length > 300 ? merged.slice(-300) : merged
   }
 
   function ensureRealtimeSocket() {
@@ -113,12 +157,9 @@ export const useStatusStore = defineStore('status', () => {
 
     socket.on('connect', () => {
       realtimeConnected.value = true
-      if (currentRealtimeAccountId.value) {
-        socket?.emit('subscribe', { accountId: currentRealtimeAccountId.value })
-      }
-      else {
-        socket?.emit('subscribe', { accountId: 'all' })
-      }
+      const subId = currentRealtimeAccountId.value || 'all'
+      lastSubscribedAccountId = subId
+      socket?.emit('subscribe', { accountId: subId })
     })
 
     socket.on('disconnect', () => {
@@ -139,20 +180,26 @@ export const useStatusStore = defineStore('status', () => {
   }
 
   function connectRealtime(accountId: string) {
-    currentRealtimeAccountId.value = String(accountId || '').trim()
+    const newId = String(accountId || '').trim()
+    currentRealtimeAccountId.value = newId
     if (!tokenRef.value)
       return
 
     const client = ensureRealtimeSocket()
     client.auth = {
       token: tokenRef.value,
-      accountId: currentRealtimeAccountId.value || 'all',
+      accountId: newId || 'all',
     }
 
     if (client.connected) {
-      client.emit('subscribe', { accountId: currentRealtimeAccountId.value || 'all' })
+      // 幂等守卫：账号未变化时不重复 subscribe，避免触发 snapshot 覆盖日志
+      if (lastSubscribedAccountId === (newId || 'all'))
+        return
+      lastSubscribedAccountId = newId || 'all'
+      client.emit('subscribe', { accountId: newId || 'all' })
       return
     }
+    lastSubscribedAccountId = ''
     client.connect()
   }
 
@@ -170,6 +217,7 @@ export const useStatusStore = defineStore('status', () => {
     socket.disconnect()
     socket = null
     realtimeConnected.value = false
+    lastSubscribedAccountId = ''
   }
 
   async function fetchStatus(accountId: string) {

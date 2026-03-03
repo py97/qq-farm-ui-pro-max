@@ -186,8 +186,15 @@ function createDataProvider(options) {
 
         restartAccount: async (accountRef) => {
             const accountId = await resolveAccountRefId(accountRef);
-            const acc = await findAccountByAnyRef(accountId || accountRef);
+            let acc = await findAccountByAnyRef(accountId || accountRef);
             if (!acc) return false;
+            // 补全 code 等 auth_data 字段，避免精简版数据缺失导致 WS 400
+            if (store && typeof store.getAccountFull === 'function') {
+                const fullAcc = await store.getAccountFull(acc.id);
+                if (fullAcc) {
+                    acc = { ...acc, ...fullAcc };
+                }
+            }
             restartWorker(acc);
             return true;
         },

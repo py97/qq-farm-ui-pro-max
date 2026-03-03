@@ -117,6 +117,14 @@ function createWorkerManager(options) {
 
             managerScheduler.clear(`force_kill_${account.id}`);
             managerScheduler.clear(`restart_fallback_${account.id}`);
+            // 遍历式清理：回收所有与该 accountId 关联的残留定时资源（如 api_timeout_ 等）
+            // 根除重启后可能产生的资源竞争或内存碎片
+            const cleanedCount = managerScheduler.clearByKeyword(account.id);
+            if (cleanedCount > 0) {
+                log('系统', `已清理 ${displayName} 的 ${cleanedCount} 个残留定时任务`, {
+                    accountId: String(account.id), accountName: displayName,
+                });
+            }
 
             if (current && current.requests && current.requests.size > 0) {
                 for (const [reqId, req] of current.requests.entries()) {
@@ -259,12 +267,18 @@ function createWorkerManager(options) {
             }
         } else if (msg.type === 'log') {
             // 保存日志
+            // 深拷贝保护: 防止极端并发下对象共享导致日志数据错乱
+            const rawData = msg.data || {};
+            let safeMeta = {};
+            try {
+                safeMeta = rawData.meta ? JSON.parse(JSON.stringify(rawData.meta)) : {};
+            } catch { /* 序列化失败则使用空对象 */ }
             const logEntry = {
-                ...msg.data,
+                ...rawData,
                 accountId,
                 accountName: worker.name,
                 ts: Date.now(),
-                meta: msg.data && msg.data.meta ? msg.data.meta : {},
+                meta: safeMeta,
             };
             logEntry._searchText = `${logEntry.msg || ''} ${logEntry.tag || ''} ${JSON.stringify(logEntry.meta || {})}`.toLowerCase();
             worker.logs.push(logEntry);
