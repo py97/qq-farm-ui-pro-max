@@ -237,11 +237,41 @@ ADMIN_PASSWORD='你的强密码' pnpm dev:core
 
 ---
 
-# 🐳 Docker 部署完整指南（整合版）
+# 🐳 Docker 部署完整指南 (2026 推荐版)
 
-## 🚀 快速开始（双架构一键部署）
+## 🚀 极简：一键开箱即用部署 (推荐)
 
-### 🚀 推荐：单行脚本一键部署 (App + MySQL + Redis)
+> 适合所有用户的最快部署方案。只需一个 `docker-compose.yml` 文件，自动完成数据库初始化。
+
+### 1. 下载部署文件
+在服务器上创建目录并下载编排文件：
+
+```bash
+mkdir -p /opt/qq-farm-bot && cd /opt/qq-farm-bot
+
+# 下载 4 个核心文件 (或从项目 deploy/ 目录拷贝)
+# - docker-compose.yml
+# - .env
+# - init-db/01-init.sql
+# - README.md
+```
+
+### 2. 配置密码
+修改 `.env` 文件，设置管理后台密码：
+```env
+ADMIN_PASSWORD=你的密码
+```
+
+### 3. 一键启动
+```bash
+docker compose up -d
+```
+
+---
+
+## ⚡ 附录：其他部署方式（仅限开发者）
+
+### 🚀 单行脚本一键部署 (App + MySQL + Redis)
 
 无论您使用的是 Intel/AMD 服务器、还是类似甲骨文/树莓派等 ARM 架构的机器，请直接在终端中执行以下命令：
 

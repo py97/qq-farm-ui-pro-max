@@ -28,7 +28,11 @@ const logContainer = ref<HTMLElement | null>(null)
 const autoScroll = ref(true)
 const lastBagFetchAt = ref(0)
 
-// ========== 农场操作预览 ==========
+// ========== 任务队列预览 ==========
+const schedulerPreview = ref<any>(null)
+const lastSchedulerFetchAt = ref(0)
+
+// ========== 农场操作预览（仅供今日统计使用） ==========
 const landsPreview = ref<any>(null)
 const lastLandsFetchAt = ref(0)
 const localMatureCountdowns = ref<Record<number, number>>({})
@@ -313,6 +317,33 @@ async function refreshBag(force = false) {
   await bagStore.fetchBag(currentAccountId.value)
 }
 
+// 获取任务队列预览数据
+async function fetchSchedulerPreview(force = false) {
+  if (!currentAccountId.value)
+    return
+  if (!currentAccount.value?.running)
+    return
+  if (!status.value?.connection?.connected)
+    return
+
+  const now = Date.now()
+  if (!force && now - lastSchedulerFetchAt.value < 5000)
+    return
+  lastSchedulerFetchAt.value = now
+
+  try {
+    const res = await api.get('/api/scheduler', {
+      headers: { 'x-account-id': currentAccountId.value },
+    })
+    if (res.data?.ok) {
+      schedulerPreview.value = res.data.data
+    }
+  }
+  catch {
+    // 静默失败
+  }
+}
+
 // 获取土地预览数据
 async function fetchLandsPreview(force = false) {
   if (!currentAccountId.value)
@@ -323,7 +354,7 @@ async function fetchLandsPreview(force = false) {
     return
 
   const now = Date.now()
-  if (!force && now - lastLandsFetchAt.value < 15000)
+  if (!force && now - lastLandsFetchAt.value < 5000)
     return
   lastLandsFetchAt.value = now
 
@@ -348,37 +379,80 @@ async function fetchLandsPreview(force = false) {
   }
 }
 
-// 格式化成熟倒计时
-function formatMatureTime(seconds: number) {
-  if (seconds <= 0)
-    return '可收获'
-  const h = Math.floor(seconds / 3600)
-  const m = Math.floor((seconds % 3600) / 60)
-  const s = Math.floor(seconds % 60)
+// 格式化任务下次执行倒计时
+function formatNextRunCountdown(nextRunAt: number) {
+  if (!nextRunAt)
+    return '--'
+  const diffSec = Math.max(0, Math.floor((nextRunAt - Date.now()) / 1000))
+  if (diffSec <= 0)
+    return '即将执行'
+  const h = Math.floor(diffSec / 3600)
+  const m = Math.floor((diffSec % 3600) / 60)
+  const s = diffSec % 60
   if (h > 0)
     return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
   return `${m}:${String(s).padStart(2, '0')}`
 }
 
-// 土地状态对应样式
-function getLandStatusClass(land: any) {
-  if (land.status === 'harvestable')
-    return 'bg-green-50 border-green-200 dark:bg-green-900/20 dark:border-green-800/40'
-  if (land.status === 'dead')
-    return 'bg-red-50 border-red-200 dark:bg-red-900/20 dark:border-red-800/40'
-  if (land.status === 'empty')
-    return 'bg-gray-50 border-gray-200 dark:bg-gray-700/20 dark:border-gray-600/40'
-  if (land.needWater || land.needWeed || land.needBug)
-    return 'bg-orange-50 border-orange-200 dark:bg-orange-900/20 dark:border-orange-800/40'
-  return 'bg-blue-50 border-blue-200 dark:bg-blue-900/10 dark:border-blue-800/30'
+// 获取任务队列显示用的的所有任务（扁平化）
+const schedulerTasks = computed(() => {
+  const data = schedulerPreview.value
+  if (!data?.runtime?.schedulers && !data?.schedulers)
+    return []
+  // 兼容两种数据结构
+  const schedulers = data.runtime?.schedulers || data.schedulers || []
+  const tasks: any[] = []
+  for (const s of schedulers) {
+    for (const t of (s.tasks || [])) {
+      tasks.push({
+        ...t,
+        namespace: s.namespace,
+      })
+    }
+  }
+  // 按 nextRunAt 排序，最近的在前
+  return tasks.sort((a, b) => (a.nextRunAt || Infinity) - (b.nextRunAt || Infinity))
+})
+
+// 任务名友好映射
+const TASK_NAME_MAP: Record<string, string> = {
+  farm_cycle: '农场巡查',
+  friend_cycle: '好友巡查',
+  daily_share: '分享奖励',
+  vip_daily_gift: '会员礼包',
+  month_card_gift: '月卡礼包',
+  open_server_gift: '开服红包',
+  illustrated_rewards: '图鉴奖励',
+  email_rewards: '邮箱领取',
+  mall_free_gifts: '免费礼包',
+  task_scan: '任务扫描',
 }
 
-// 已解锁土地列表
-const unlockedLands = computed(() => {
-  if (!landsPreview.value?.lands)
-    return []
-  return landsPreview.value.lands.filter((l: any) => l.unlocked)
-})
+function getTaskDisplayName(name: string) {
+  // 先精确匹配
+  if (TASK_NAME_MAP[name])
+    return TASK_NAME_MAP[name]
+  // 模糊匹配（包含关键词）
+  for (const [key, label] of Object.entries(TASK_NAME_MAP)) {
+    if (name.includes(key))
+      return label
+  }
+  return name
+}
+
+function getTaskKindLabel(kind: string) {
+  if (kind === 'interval')
+    return '循环'
+  if (kind === 'timeout')
+    return '单次'
+  return kind
+}
+
+function getTaskKindClass(kind: string) {
+  if (kind === 'interval')
+    return 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300'
+  return 'bg-gray-100 text-gray-600 dark:bg-gray-700/30 dark:text-gray-400'
+}
 
 async function refresh() {
   if (currentAccountId.value) {
@@ -405,6 +479,8 @@ async function refresh() {
     await refreshBag()
     // 拉取土地预览
     await fetchLandsPreview()
+    // 拉取任务队列预览
+    await fetchSchedulerPreview()
   }
 }
 
@@ -424,6 +500,7 @@ watch(() => status.value?.connection?.connected, (connected) => {
   if (connected) {
     refreshBag(true)
     fetchLandsPreview(true)
+    fetchSchedulerPreview(true)
   }
 })
 
@@ -431,6 +508,8 @@ watch(() => JSON.stringify(status.value?.operations || {}), (next, prev) => {
   if (!realtimeConnected.value || next === prev)
     return
   refreshBag()
+  fetchLandsPreview()
+  fetchSchedulerPreview()
 })
 
 watch(hasActiveLogFilter, (enabled) => {
@@ -807,71 +886,69 @@ async function handleDashboardTrialRenew() {
         </div>
       </div>
 
-      <!-- 右侧面板（60%）：纵向分割 —— 农场预览 + 今日统计 -->
+      <!-- 右侧面板（60%）：纵向分割 —— 任务队列预览 + 今日统计 -->
       <div class="flex flex-col gap-4 md:w-[60%] md:min-w-0 md:overflow-hidden">
-        <!-- 农场操作预览 -->
+        <!-- 任务队列预览 -->
         <div class="glass-panel flex flex-1 flex-col rounded-lg p-4 shadow md:overflow-hidden">
           <h3 class="glass-text-main mb-3 flex shrink-0 items-center gap-2 text-base font-medium">
-            <div class="i-carbon-sprout text-primary-500" />
-            <span>农场预览</span>
-            <span v-if="landsPreview?.summary" class="ml-auto flex items-center gap-2 text-xs font-normal">
-              <span class="rounded bg-green-100 px-1.5 py-0.5 text-green-700 dark:bg-green-900/30 dark:text-green-300">可收 {{ landsPreview.summary.harvestable || 0 }}</span>
-              <span class="rounded bg-blue-100 px-1.5 py-0.5 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">生长 {{ landsPreview.summary.growing || 0 }}</span>
-              <span class="rounded bg-gray-100 px-1.5 py-0.5 text-gray-600 dark:bg-gray-700/30 dark:text-gray-400">空地 {{ landsPreview.summary.empty || 0 }}</span>
-              <span v-if="landsPreview.summary.dead" class="rounded bg-red-100 px-1.5 py-0.5 text-red-700 dark:bg-red-900/30 dark:text-red-300">枯萎 {{ landsPreview.summary.dead }}</span>
+            <div class="i-carbon-task text-indigo-500" />
+            <span>任务队列预览</span>
+            <span v-if="schedulerTasks.length" class="ml-auto flex items-center gap-2 text-xs font-normal">
+              <span class="rounded bg-indigo-100 px-1.5 py-0.5 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300">共 {{ schedulerTasks.length }} 个任务</span>
+              <span class="rounded bg-green-100 px-1.5 py-0.5 text-green-700 dark:bg-green-900/30 dark:text-green-300">运行中 {{ schedulerTasks.filter((t: any) => t.running).length }}</span>
             </span>
           </h3>
 
-          <div v-if="!landsPreview || !unlockedLands.length" class="glass-text-muted flex flex-1 items-center justify-center py-6 text-center text-sm">
+          <div v-if="!schedulerPreview || !schedulerTasks.length" class="glass-text-muted flex flex-1 items-center justify-center py-6 text-center text-sm">
             <div v-if="!status?.connection?.connected">
-              账号未连接，无法获取土地信息
+              账号未连接，无法获取任务队列
             </div>
             <div v-else>
-              正在加载土地信息...
+              正在加载任务队列...
             </div>
           </div>
 
-          <div v-else class="custom-scrollbar grid min-h-0 flex-1 grid-cols-2 content-start gap-2 overflow-y-auto pr-1 lg:grid-cols-3 xl:grid-cols-4">
-            <div
-              v-for="land in unlockedLands"
-              :key="land.id"
-              class="flex flex-col rounded-lg border p-2.5 transition-colors"
-              :class="getLandStatusClass(land)"
-            >
-              <!-- 地块头部：编号 + 状态 -->
-              <div class="mb-1 flex items-center justify-between">
-                <span class="glass-text-muted text-[11px]">地块{{ land.id }}</span>
-                <span
-                  v-if="land.status === 'harvestable'"
-                  class="text-[11px] text-green-600 font-bold dark:text-green-400"
-                >✅ 可收获</span>
-                <span
-                  v-else-if="land.status === 'dead'"
-                  class="text-[11px] text-red-500 font-bold"
-                >💀 枯萎</span>
-                <span
-                  v-else-if="land.status === 'empty'"
-                  class="text-[11px] text-gray-400"
-                >空地</span>
-                <span
-                  v-else-if="(localMatureCountdowns[land.id] || 0) > 0"
-                  class="text-[11px] text-blue-600 font-mono dark:text-blue-400"
-                >⏳ {{ formatMatureTime(localMatureCountdowns[land.id] || 0) }}</span>
-                <span v-else class="text-[11px] text-blue-500 font-mono">⏳ --</span>
-              </div>
-
-              <!-- 作物名 -->
-              <div class="glass-text-main truncate text-sm font-medium" :title="land.plantName">
-                {{ land.plantName || (land.status === 'empty' ? '—' : '未知') }}
-              </div>
-
-              <!-- 异常标记 -->
-              <div v-if="land.needWater || land.needWeed || land.needBug" class="mt-1 flex flex-wrap gap-1">
-                <span v-if="land.needWater" class="rounded bg-blue-100 px-1 py-0.5 text-[10px] text-blue-600 dark:bg-blue-900/30 dark:text-blue-300">💧浇水</span>
-                <span v-if="land.needWeed" class="rounded bg-yellow-100 px-1 py-0.5 text-[10px] text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300">🌿除草</span>
-                <span v-if="land.needBug" class="rounded bg-red-100 px-1 py-0.5 text-[10px] text-red-600 dark:bg-red-900/30 dark:text-red-300">🐛除虫</span>
-              </div>
-            </div>
+          <div v-else class="custom-scrollbar min-h-0 flex-1 overflow-y-auto pr-1">
+            <table class="w-full text-xs">
+              <thead class="glass-text-muted sticky top-0 z-10 bg-white/80 backdrop-blur dark:bg-gray-800/80">
+                <tr class="border-b border-gray-200/30 dark:border-gray-700/30">
+                  <th class="px-2 py-1.5 text-left font-medium">任务名</th>
+                  <th class="px-2 py-1.5 text-center font-medium">类型</th>
+                  <th class="px-2 py-1.5 text-center font-medium">状态</th>
+                  <th class="px-2 py-1.5 text-right font-medium">下次执行</th>
+                  <th class="px-2 py-1.5 text-right font-medium">已执行</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr
+                  v-for="task in schedulerTasks"
+                  :key="`${task.namespace}-${task.name}`"
+                  class="border-b border-gray-100/20 transition-colors hover:bg-gray-50/50 dark:border-gray-700/20 dark:hover:bg-gray-700/20"
+                >
+                  <td class="max-w-[180px] truncate px-2 py-1.5 font-medium" :title="task.name">
+                    {{ getTaskDisplayName(task.name) }}
+                  </td>
+                  <td class="px-2 py-1.5 text-center">
+                    <span class="rounded px-1.5 py-0.5 text-[10px] font-medium" :class="getTaskKindClass(task.kind)">
+                      {{ getTaskKindLabel(task.kind) }}
+                    </span>
+                  </td>
+                  <td class="px-2 py-1.5 text-center">
+                    <span v-if="task.running" class="inline-flex items-center gap-1 text-green-600 dark:text-green-400">
+                      <span class="h-1.5 w-1.5 animate-pulse rounded-full bg-green-500" />
+                      执行中
+                    </span>
+                    <span v-else class="text-gray-400">等待中</span>
+                  </td>
+                  <td class="px-2 py-1.5 text-right font-mono">
+                    {{ formatNextRunCountdown(task.nextRunAt) }}
+                  </td>
+                  <td class="px-2 py-1.5 text-right">
+                    {{ task.runCount || 0 }} 次
+                  </td>
+                </tr>
+              </tbody>
+            </table>
           </div>
         </div>
 
