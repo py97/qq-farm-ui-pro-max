@@ -44,13 +44,42 @@ cd "${DEPLOY_DIR}"
 echo -e "${GREEN}✅ 部署目录: ${DEPLOY_DIR}${NC}"
 
 # ---------- 3. 从 GitHub 下载部署文件 ----------
+# 预定义加速镜像（如果原生链接慢）
+GITHUB_PROXY="https://mirror.ghproxy.com/"
 REPO_BASE="https://raw.githubusercontent.com/smdk000/qq-farm-ui-pro-max/main/deploy"
 
-echo "📦 下载部署文件..."
-curl -fsSL "${REPO_BASE}/docker-compose.yml"  -o docker-compose.yml
-curl -fsSL "${REPO_BASE}/.env"                -o .env
-curl -fsSL "${REPO_BASE}/init-db/01-init.sql" -o init-db/01-init.sql
-echo -e "${GREEN}✅ 部署文件下载完成${NC}"
+echo "📦 正在下载部署文件..."
+
+download_file() {
+    local file=$1
+    local target=$2
+    local url="${REPO_BASE}/${file}"
+    
+    echo -n "   正在下载 ${file}... "
+    
+    # 尝试 1: 直接下载 (带 15s 超时)
+    if curl -fsSL --connect-timeout 15 "${url}" -o "${target}"; then
+        echo -e "${GREEN}OK${NC}"
+        return 0
+    fi
+    
+    # 尝试 2: 使用加速镜像
+    echo -n "原生连接较慢，切换加速镜像... "
+    if curl -fsSL --connect-timeout 20 "${GITHUB_PROXY}${url}" -o "${target}"; then
+        echo -e "${GREEN}OK${NC}"
+        return 0
+    else
+        echo -e "${RED}FAILED${NC}"
+        echo -e "${RED}❌ 错误: 无法下载 ${file}，请检查网络连接或手动下载。${NC}"
+        exit 1
+    fi
+}
+
+download_file "docker-compose.yml" "docker-compose.yml"
+download_file ".env" ".env"
+download_file "init-db/01-init.sql" "init-db/01-init.sql"
+
+echo -e "${GREEN}✅ 部署文件全部下载完成${NC}"
 
 # ---------- 4. 配置密码 ----------
 echo ""
