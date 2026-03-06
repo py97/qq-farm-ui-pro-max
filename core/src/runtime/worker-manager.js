@@ -18,6 +18,8 @@ function createWorkerManager(options) {
         triggerOfflineReminder,
         addOrUpdateAccount,
         deleteAccount,
+        upsertFriendBlacklist,
+        broadcastConfigToWorkers,
         onStatusSync,
         onWorkerLog,
     } = options;
@@ -92,7 +94,7 @@ function createWorkerManager(options) {
             config: {
                 code: account.code,
                 platform: account.platform,
-                uin: account.uin,
+                uin: account.uin || account.qq || '',
             },
         });
         child.send({ type: 'config_sync', config: buildConfigSnapshotForAccount(account.id) });
@@ -117,14 +119,6 @@ function createWorkerManager(options) {
 
             managerScheduler.clear(`force_kill_${account.id}`);
             managerScheduler.clear(`restart_fallback_${account.id}`);
-            // 遍历式清理：回收所有与该 accountId 关联的残留定时资源（如 api_timeout_ 等）
-            // 根除重启后可能产生的资源竞争或内存碎片
-            const cleanedCount = managerScheduler.clearByKeyword(account.id);
-            if (cleanedCount > 0) {
-                log('系统', `已清理 ${displayName} 的 ${cleanedCount} 个残留定时任务`, {
-                    accountId: String(account.id), accountName: displayName,
-                });
-            }
 
             if (current && current.requests && current.requests.size > 0) {
                 for (const [reqId, req] of current.requests.entries()) {
@@ -221,7 +215,7 @@ function createWorkerManager(options) {
                         addOrUpdateAccount({
                             id: accountId,
                             nick: newNick,
-                        }).catch(e => console.error('[worker-manager] 自动更新账号昵称失败:', e));
+                        });
                         // 仅在首次同步或名称变更时记录日志
                         if (oldNick !== newNick) {
                             log('系统', `已同步账号昵称: ${oldNick || 'None'} -> ${newNick}`, { accountId, accountName: worker.name });
@@ -240,7 +234,7 @@ function createWorkerManager(options) {
                 if (!worker.disconnectedSince) worker.disconnectedSince = now;
                 const offlineMs = now - worker.disconnectedSince;
                 const autoDeleteMs = getOfflineAutoDeleteMs();
-                if (!worker.autoDeleteTriggered && offlineMs >= autoDeleteMs) {
+                if (autoDeleteMs > 0 && !worker.autoDeleteTriggered && offlineMs >= autoDeleteMs) {
                     worker.autoDeleteTriggered = true;
                     const offlineMin = Math.floor(offlineMs / 60000);
                     log('系统', `账号 ${worker.name} 持续离线 ${offlineMin} 分钟，自动删除账号信息`);
@@ -259,7 +253,7 @@ function createWorkerManager(options) {
                     );
                     stopWorker(accountId);
                     try {
-                        deleteAccount(accountId, { retainConfig: true });
+                        deleteAccount(accountId);
                     } catch (e) {
                         log('错误', `删除离线账号失败: ${e.message}`);
                     }
@@ -267,18 +261,12 @@ function createWorkerManager(options) {
             }
         } else if (msg.type === 'log') {
             // 保存日志
-            // 深拷贝保护: 防止极端并发下对象共享导致日志数据错乱
-            const rawData = msg.data || {};
-            let safeMeta = {};
-            try {
-                safeMeta = rawData.meta ? JSON.parse(JSON.stringify(rawData.meta)) : {};
-            } catch { /* 序列化失败则使用空对象 */ }
             const logEntry = {
-                ...rawData,
+                ...msg.data,
                 accountId,
                 accountName: worker.name,
                 ts: Date.now(),
-                meta: safeMeta,
+                meta: msg.data && msg.data.meta ? msg.data.meta : {},
             };
             logEntry._searchText = `${logEntry.msg || ''} ${logEntry.tag || ''} ${JSON.stringify(logEntry.meta || {})}`.toLowerCase();
             worker.logs.push(logEntry);
@@ -291,9 +279,6 @@ function createWorkerManager(options) {
         } else if (msg.type === 'error') {
             log('错误', `账号[${accountId}]进程报错: ${msg.error}`, { accountId: String(accountId), accountName: worker.name });
         } else if (msg.type === 'ws_error') {
-            // 如果 worker 正在停止中（例如 restartWorker 过程），忽略 ws_error
-            // 避免旧进程的错误状态传播到前端，导致扫码弹窗重新弹出
-            if (worker.stopping) return;
             const code = Number(msg.code) || 0;
             const message = msg.message || '';
             worker.wsError = { code, message, at: Date.now() };
@@ -316,6 +301,16 @@ function createWorkerManager(options) {
             });
             addAccountLog('kickout_stop', `账号 ${worker.name} 被踢下线，已自动停止`, accountId, worker.name, { reason });
             stopWorker(accountId);
+        } else if (msg.type === 'friend_blacklist_add') {
+            const gid = Number(msg.gid);
+            if (!Number.isFinite(gid) || gid <= 0) return;
+            if (typeof upsertFriendBlacklist !== 'function') return;
+            try {
+                const changed = !!upsertFriendBlacklist(accountId, gid);
+                if (changed && typeof broadcastConfigToWorkers === 'function') {
+                    broadcastConfigToWorkers(accountId);
+                }
+            } catch { }
         } else if (msg.type === 'api_response') {
             const { id, result, error } = msg;
             managerScheduler.clear(`api_timeout_${accountId}_${id}`);
@@ -324,13 +319,6 @@ function createWorkerManager(options) {
                 if (error) req.reject(new Error(error));
                 else req.resolve(result);
                 worker.requests.delete(id);
-            }
-        } else if (msg.type === 'sync_friends_cache') {
-            const { updateFriendsCache } = require('../services/database');
-            if (updateFriendsCache) {
-                updateFriendsCache(accountId, msg.data).catch((err) => {
-                    log('错误', `账号[${accountId}]缓存好友信息失败: ${err.message}`);
-                });
             }
         }
     }

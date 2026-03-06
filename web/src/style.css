@@ -206,7 +206,7 @@ body {
 
 .theme-sakura {
   --glass-bg: rgba(255, 255, 255, 0.85);
-  --glass-border: rgba(244, 114, 182, 0.25);
+  --glass-border: rgba(244, 114, 182, 0.15);
   --orb-1: #fbcfe8;
   --orb-2: #f472b6;
   --orb-3: #fecdd3;
@@ -216,7 +216,7 @@ body {
 
 .dark.theme-sakura {
   --glass-bg: rgba(63, 26, 46, 0.75);
-  --glass-border: rgba(244, 114, 182, 0.3);
+  --glass-border: rgba(244, 114, 182, 0.18);
   --text-main: #fdf2f8;
   --text-muted: #fbcfe8;
 }
@@ -380,4 +380,19 @@ html.low-performance-mode *::after {
 .ant-modal-content,
 .ant-card {
   background: transparent !important;
+}
+
+/* ================= 主题色兼容：硬编码蓝色组件跟随主题色 ================= */
+:root:not(:root) .bg-blue-600,
+[class*="theme-"] .bg-blue-600 {
+  background-color: rgb(var(--color-primary-600)) !important;
+}
+[class*="theme-"] .hover\:bg-blue-700:hover {
+  background-color: rgb(var(--color-primary-700)) !important;
+}
+[class*="theme-"] .shadow-blue-500\/25 {
+  box-shadow: 0 10px 15px -3px rgba(var(--color-primary-500), 0.25) !important;
+}
+[class*="theme-"] .text-blue-600 {
+  color: rgb(var(--color-primary-600)) !important;
 }

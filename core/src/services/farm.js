@@ -28,6 +28,77 @@ let landsFetchPromise = null;
 let landsFetchTime = 0;
 const LANDS_CACHE_TTL_MS = 500;
 
+// ============ 访客行为检测 (来源: NC 版 farm.js#L32-92) ============
+// visitorCache: 缓存每块地的访客状态，用于 diff 检测新增访客（种草/放虫/偷菜）
+const visitorCache = new Map();
+
+/**
+ * 根据 GID 获取好友昵称
+ * 优雅降级：若查询失败或好友不存在，返回 "GID:xxx" 格式
+ */
+async function getFriendNameByGid(gid) {
+    try {
+        const { getCachedFriends } = require('./database');
+        if (!getCachedFriends || !CONFIG.accountId) return `GID:${gid}`;
+        const friends = await getCachedFriends(CONFIG.accountId);
+        const friend = friends.find(f => toNum(f.gid) === toNum(gid));
+        return friend ? friend.name : `GID:${gid}`;
+    } catch {
+        return `GID:${gid}`;
+    }
+}
+
+/**
+ * 检测并记录访客行为变化
+ * 比对当前土地状态与缓存，识别新增的种草者/放虫者/偷菜者
+ * 仅记录增量变化，避免重复告警
+ */
+async function detectAndLogVisitorChanges(lands) {
+    if (!lands || lands.length === 0) return;
+
+    for (const land of lands) {
+        if (!land || !land.unlocked || !land.plant) continue;
+        const landId = toNum(land.id);
+        const plant = land.plant;
+        const cached = visitorCache.get(landId) || { weed_owners: [], insect_owners: [], stealers: [] };
+
+        const currentWeedOwners = (plant.weed_owners || []).map(g => toNum(g));
+        const currentInsectOwners = (plant.insect_owners || []).map(g => toNum(g));
+        const currentStealers = (plant.stealers || []).map(g => toNum(g));
+
+        // 检测新增的放草者
+        for (const gid of currentWeedOwners) {
+            if (!cached.weed_owners.includes(gid)) {
+                const name = await getFriendNameByGid(gid);
+                log('访客', `🌿 ${name} 给你的土地#${landId}放草了`, { module: 'farm', event: 'visitor', result: 'weed', gid, landId });
+            }
+        }
+
+        // 检测新增的放虫者
+        for (const gid of currentInsectOwners) {
+            if (!cached.insect_owners.includes(gid)) {
+                const name = await getFriendNameByGid(gid);
+                log('访客', `🐛 ${name} 给你的土地#${landId}放虫了`, { module: 'farm', event: 'visitor', result: 'insect', gid, landId });
+            }
+        }
+
+        // 检测新增的偷菜者
+        for (const gid of currentStealers) {
+            if (!cached.stealers.includes(gid)) {
+                const name = await getFriendNameByGid(gid);
+                log('访客', `🥷 ${name} 偷取了你土地#${landId}的果实`, { module: 'farm', event: 'visitor', result: 'steal', gid, landId });
+            }
+        }
+
+        // 更新缓存 (无论是否有变化都更新，确保状态同步)
+        visitorCache.set(landId, {
+            weed_owners: currentWeedOwners,
+            insect_owners: currentInsectOwners,
+            stealers: currentStealers,
+        });
+    }
+}
+
 // ============ 农场 API ============
 
 // 操作限制更新回调 (由 friend.js 设置)
@@ -1126,6 +1197,10 @@ async function runFarmOperation(opType) {
     }
 
     const lands = landsReply.lands;
+
+    // [T1] 访客行为检测 — 后台静默执行，不影响主流程
+    try { await detectAndLogVisitorChanges(lands); } catch { /* 访客检测失败不阻塞主流程 */ }
+
     const status = analyzeLands(lands);
 
     // 摘要

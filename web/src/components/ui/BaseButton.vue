@@ -30,7 +30,7 @@ const baseClasses = 'inline-flex items-center justify-center rounded-lg font-med
 const variantClasses = computed(() => {
   switch (props.variant) {
     case 'primary':
-      return 'bg-blue-600 text-white hover:bg-blue-700 focus:ring-blue-500 shadow-sm dark:bg-blue-600 dark:hover:bg-blue-500'
+      return 'bg-primary-600 text-white hover:bg-primary-700 focus:ring-primary-500 shadow-sm dark:bg-primary-600 dark:hover:bg-primary-500'
     case 'secondary':
       return 'bg-gray-100 text-gray-700 hover:bg-gray-200 focus:ring-gray-500 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600'
     case 'success':
@@ -42,9 +42,9 @@ const variantClasses = computed(() => {
     case 'outline':
       return 'border border-gray-300 bg-transparent text-gray-700 hover:bg-gray-50 focus:ring-gray-500 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800'
     case 'text':
-      return 'text-blue-600 hover:underline p-0 bg-transparent shadow-none hover:bg-transparent dark:text-blue-400'
+      return 'text-primary-600 hover:underline p-0 bg-transparent shadow-none hover:bg-transparent dark:text-primary-400'
     default:
-      return 'bg-blue-600 text-white hover:bg-blue-700 focus:ring-blue-500 shadow-sm dark:bg-blue-600 dark:hover:bg-blue-500'
+      return 'bg-primary-600 text-white hover:bg-primary-700 focus:ring-primary-500 shadow-sm dark:bg-primary-600 dark:hover:bg-primary-500'
   }
 })
 

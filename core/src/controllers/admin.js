@@ -1734,10 +1734,11 @@ function startAdminServer(dataProvider) {
                 if (result.status === 'OK') {
                     const ticket = result.ticket;
                     const uin = result.uin || '';
-                    const nickname = result.nickname || ''; // 获取昵称
-                    const appid = '1112386029'; // Farm appid
+                    const nickname = result.nickname || '';
+                    const appid = '1112386029';
 
                     const authCode = await MiniProgramLoginSession.getAuthCode(ticket, appid);
+                    console.log(`[QR登录] 代理登录成功, authCode=${authCode ? authCode.substring(0, 20) + '...' : '空'}`);
 
                     let avatar = '';
                     if (uin) {

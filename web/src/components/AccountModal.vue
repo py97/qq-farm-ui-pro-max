@@ -22,10 +22,10 @@ const errorMessage = ref('')
 const form = reactive({
   name: '',
   code: '',
-  platform: 'qq',
+  platform: 'wx_car',
 })
 
-const qrPlatform = ref('qq') // qr tab platform
+const qrPlatform = ref('wx_car') // qr tab platform（默认车机微信）
 
 // ========== 串行轮询（彻底杜绝竞态条件） ==========
 // 用 setTimeout 而非 setInterval，确保前一个请求完成后才发下一个
@@ -248,8 +248,8 @@ watch(() => props.show, (newVal) => {
       activeTab.value = 'qr'
       form.name = props.editData.name
       form.code = props.editData.code || ''
-      form.platform = props.editData.platform || 'qq'
-      qrPlatform.value = props.editData.platform || 'qq'
+      form.platform = props.editData.platform || 'wx_car'
+      qrPlatform.value = 'wx_car' // 扫码平台强制默认车机微信（最稳定可用通道）
       loadQRCode()
     }
     else {
@@ -257,8 +257,8 @@ watch(() => props.show, (newVal) => {
       activeTab.value = 'qr'
       form.name = ''
       form.code = ''
-      form.platform = 'qq'
-      qrPlatform.value = 'qq'
+      form.platform = 'wx_car'
+      qrPlatform.value = 'wx_car'
       loadQRCode()
     }
   }
@@ -316,13 +316,14 @@ watch(() => props.show, (newVal) => {
               >
                 QQ
               </button>
-              <button
+              <!-- 微信(wx)协议已无法正常使用，暂时隐藏 -->
+              <!-- <button
                 class="flex-1 whitespace-nowrap min-w-[64px] px-2 py-1.5 rounded-md text-xs font-medium transition-all duration-200"
                 :class="qrPlatform === 'wx' ? 'bg-white dark:bg-white/10 shadow-sm text-[#07C160]' : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'"
                 @click="qrPlatform = 'wx'; loadQRCode()"
               >
                 微信
-              </button>
+              </button> -->
               <button
                 class="flex-1 whitespace-nowrap min-w-[64px] px-2 py-1.5 rounded-md text-xs font-medium transition-all duration-200"
                 :class="qrPlatform === 'wx_ipad' ? 'bg-white dark:bg-white/10 shadow-sm text-[#07C160]' : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'"

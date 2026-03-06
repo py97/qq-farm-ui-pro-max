@@ -1,4 +1,5 @@
 const { sleep } = require('../utils/utils');
+const QRCode = require('qrcode');
 
 function createReloginReminderService(options) {
     const {
@@ -13,18 +14,19 @@ function createReloginReminderService(options) {
     } = options;
 
     const reloginWatchers = new Map(); // key: accountId:loginCode
+  const lastReminderTime = new Map(); // key: accountId, value: timestamp
 
     function getOfflineAutoDeleteMs() {
         const cfg = store.getOfflineReminder ? store.getOfflineReminder() : null;
-        const sec = Math.max(1, Number.parseInt(cfg && cfg.offlineDeleteSec, 10) || 120);
+        const sec = Number.parseInt(cfg && cfg.offlineDeleteSec, 10) || 0;
         return sec * 1000;
     }
 
-    async function applyReloginCode({ accountId = '', accountName = '', authCode = '', uin = '' }) {
+    function applyReloginCode({ accountId = '', accountName = '', authCode = '', uin = '' }) {
         const code = String(authCode || '').trim();
         if (!code) return;
 
-        const data = await getAccounts();
+        const data = getAccounts();
         const list = Array.isArray(data.accounts) ? data.accounts : [];
         const found = list.find(a => String(a.id) === String(accountId));
         const avatar = uin ? `https://q1.qlogo.cn/g?b=qq&nk=${uin}&s=640` : '';
@@ -33,7 +35,7 @@ function createReloginReminderService(options) {
         const restartWorker = typeof controls.restartWorker === 'function' ? controls.restartWorker : null;
 
         if (found) {
-            await addOrUpdateAccount({
+            addOrUpdateAccount({
                 id: found.id,
                 name: found.name,
                 code,
@@ -56,7 +58,7 @@ function createReloginReminderService(options) {
             return;
         }
 
-        const created = await addOrUpdateAccount({
+        const created = addOrUpdateAccount({
             name: accountName || (uin ? String(uin) : '重登录账号'),
             code,
             platform: 'qq',
@@ -116,7 +118,7 @@ function createReloginReminderService(options) {
                             stop();
                             return;
                         }
-                        await applyReloginCode({ accountId, accountName, authCode, uin });
+                        applyReloginCode({ accountId, accountName, authCode, uin });
                         stop();
                         return;
                     }
@@ -132,6 +134,17 @@ function createReloginReminderService(options) {
 
     async function triggerOfflineReminder(payload = {}) {
         try {
+            const accountId = String(payload.accountId || '').trim();
+            
+            // 去重：避免短时间内重复发送推送（5分钟内）
+            const now = Date.now();
+            const lastTime = lastReminderTime.get(accountId);
+            if (lastTime && (now - lastTime) < 5 * 60 * 1000) {
+                log('系统', `账号 ${payload.accountName || accountId} 推送过于频繁，已跳过`, { accountId, accountName: payload.accountName || accountId });
+                return;
+            }
+            lastReminderTime.set(accountId, now);
+            
             const cfg = store.getOfflineReminder ? store.getOfflineReminder() : null;
             if (!cfg) return;
 
@@ -146,18 +159,25 @@ function createReloginReminderService(options) {
             let content = String(cfg.msg || '').trim();
             if (!channel || !token || !title || !content) return;
             if (channel === 'webhook' && !endpoint) return;
-            if (reloginUrlMode === 'qq_link' || reloginUrlMode === 'qr_link') {
+            if (reloginUrlMode === 'qq_link' || reloginUrlMode === 'qr_code' || reloginUrlMode === 'all') {
                 try {
                     const qr = await miniProgramLoginSession.requestLoginCode();
                     const loginCode = String((qr && qr.code) || '').trim();
                     const qqUrl = String((qr && (qr.url || qr.loginUrl)) || '').trim();
-                    const qrCodeUrl = String((qr && qr.qrcode) || '').trim();
+                    const qrCodeImage = String((qr && qr.image) || '').trim();
                     if (qqUrl) {
                         if (reloginUrlMode === 'qq_link') {
-                            content = `${content}\n\n重登录链接: ${qqUrl}`;
-                        } else {
-                            const qrcodeText = qrCodeUrl || qqUrl;
-                            content = `${content}\n\n重登录二维码链接: ${qrcodeText}`;
+                            content = `${content}\n\n登录链接: ${qqUrl}`;
+                        } else if(reloginUrlMode === 'qr_code') {
+                            if (qrCodeImage) {
+                                content = `${content}\n\n登录二维码:\n\n<img src="${qrCodeImage}" alt="登录二维码" width="300" height="300" />`;
+                            }
+                        }else if(reloginUrlMode === 'all'){
+                            if (qrCodeImage) {
+                                content = ` ${content}\n\n登录链接: ${qqUrl}\n登录二维码:\n <img src="${qrCodeImage}" alt="登录二维码" width="300" height="300" />`;
+                            } else {
+                                content = ` ${content}\n\n登录链接: ${qqUrl}`;
+                            }
                         }
                     }
                     if (loginCode) {

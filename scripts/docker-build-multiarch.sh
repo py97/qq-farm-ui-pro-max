@@ -13,7 +13,7 @@ BLUE='\033[0;34m'
 NC='\033[0m'
 
 # 配置
-VERSION=${1:-"3.3.3"}
+VERSION=${1:-"4.2.0"}
 IMAGE_NAME="qq-farm-bot-ui"
 DOCKERHUB_USER="smdk000"
 REPO="${DOCKERHUB_USER}/${IMAGE_NAME}"

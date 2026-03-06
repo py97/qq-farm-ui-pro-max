@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>异步调度底层重构计划 (Plan_20260305_异步调度底层重构)</title>
+    <style>
+        :root {
+            --bg-color: #0f172a;
+            --card-bg: #1e293b;
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --primary: #3b82f6;
+            --success: #10b981;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+            --border-color: #334155;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            line-height: 1.6;
+            padding: 2rem;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        header {
+            border-bottom: 2px solid var(--border-color);
+            padding-bottom: 1.5rem;
+            margin-bottom: 2rem;
+        }
+
+        h1 {
+            color: var(--primary);
+            font-size: 2.25rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .meta-info {
+            display: flex;
+            gap: 1rem;
+            color: var(--text-muted);
+            font-size: 0.9rem;
+        }
+
+        .badge {
+            background-color: var(--primary);
+            color: white;
+            padding: 0.2rem 0.6rem;
+            border-radius: 999px;
+            font-weight: 500;
+            font-size: 0.8rem;
+        }
+
+        .badge.warning {
+            background-color: var(--warning);
+        }
+
+        .badge.danger {
+            background-color: var(--danger);
+        }
+
+        .badge.success {
+            background-color: var(--success);
+        }
+
+        section {
+            background-color: var(--card-bg);
+            border-radius: 0.75rem;
+            padding: 2rem;
+            margin-bottom: 2rem;
+            border: 1px solid var(--border-color);
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        }
+
+        h2 {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            margin-bottom: 1.5rem;
+            color: white;
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 0.5rem;
+        }
+
+        h3 {
+            margin-top: 1.5rem;
+            margin-bottom: 1rem;
+            color: #e2e8f0;
+        }
+
+        ul,
+        ol {
+            padding-left: 1.5rem;
+            margin-bottom: 1.5rem;
+        }
+
+        li {
+            margin-bottom: 0.5rem;
+        }
+
+        code {
+            background-color: rgba(255, 255, 255, 0.1);
+            padding: 0.2rem 0.4rem;
+            border-radius: 0.25rem;
+            font-family: "Fira Code", monospace;
+            color: #60a5fa;
+        }
+
+        pre {
+            background-color: #0b1120;
+            padding: 1rem;
+            border-radius: 0.5rem;
+            overflow-x: auto;
+            margin-bottom: 1.5rem;
+            border: 1px solid var(--border-color);
+        }
+
+        pre code {
+            background-color: transparent;
+            padding: 0;
+            color: #e2e8f0;
+        }
+
+        .mermaid {
+            background-color: #0f172a;
+            padding: 1.5rem;
+            border-radius: 0.5rem;
+            margin: 1.5rem 0;
+            display: flex;
+            justify-content: center;
+            border: 1px solid var(--border-color);
+        }
+
+        /* 表格样式 */
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 1.5rem;
+        }
+
+        th,
+        td {
+            padding: 0.75rem 1rem;
+            text-align: left;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        th {
+            background-color: rgba(255, 255, 255, 0.05);
+            font-weight: 600;
+        }
+
+        tr:hover {
+            background-color: rgba(255, 255, 255, 0.02);
+        }
+
+        .impact-high {
+            color: var(--danger);
+            font-weight: bold;
+        }
+
+        .impact-med {
+            color: var(--warning);
+            font-weight: bold;
+        }
+
+        .impact-low {
+            color: var(--success);
+            font-weight: bold;
+        }
+    </style>
+    <!-- 引入 Mermaid.js -->
+    <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
+    <script>
+        mermaid.initialize({
+            startOnLoad: true,
+            theme: 'dark',
+            securityLevel: 'loose'
+        });
+    </script>
+</head>
+
+<body>
+
+    <header>
+        <h1>异步调度底层重构与健壮性改造计划</h1>
+        <div class="meta-info">
+            <span>📅 日期: 2026-03-05</span>
+            <span>👤 作者: Antigravity</span>
+            <span>🎯 目标模块: <code>core/src/services/(farm.js | friend.js)</code></span>
+            <span class="badge warning">高优先级架构重构</span>
+        </div>
+    </header>
+
+    <section id="background">
+        <h2>📌 1. 业务背景与问题定义 (Problem Statement)</h2>
+        <p>在 `v4.2.0` 的演进中，我们成功引入了 <code>common.js</code>。该模块包含企业系统级别的异步包装函数：</p>
+        <ul>
+            <li><code>withTimeout</code> (防止网络请求永久挂死)</li>
+            <li><code>withRetry</code> (指数退避熔断重试机制)</li>
+            <li><code>createDailyCooldown</code> (CD冷却时间节流阀)</li>
+            <li><code>createDailyTaskManager</code> (防并发重入的任务管理锁)</li>
+        </ul>
+        <p><strong>痛点所在：</strong> 目前 `farm.js` 和 `friend.js` 中仍然充斥着大量原始、脆弱的 <code>await sleep(100)</code> 以及缺乏
+            <code>try-catch-timeout</code> 保护的裸奔 <code>sendMsgAsync</code>
+            调用。如果腾讯服务器发生丢包或微服务假死，整个机器人的该用户上下文（Context）可能发生卡死阻塞且不再恢复，这是极其危险的技术债。</p>
+    </section>
+
+    <section id="design">
+        <h2>🏗️ 2. 架构设计与实现策略 (Architecture Design)</h2>
+        <p>我们的核心思想是 <strong>"消费/生产分离，优雅降级"</strong>。将原始的网络发送层通过包装器（Decorators）包裹，并在业务侧捕获并进行静默丢弃（优雅降级），确保巡检循环永不崩溃。</p>
+
+        <h3>2.1 重构数据流流向视图 (Data Flow)</h3>
+        <div class="mermaid">
+            graph TD
+            A[业务模块 farm.js / friend.js] -->|调用业务方法| B(withRetry 指数退避网关)
+            B -->|单次包裹| C(withTimeout 超时防挂死网关)
+            C -->|真正网络请求| D(network.js sendMsgAsync)
+
+            D -.->|15s无响应| C
+            C --触发TimeoutError--> B
+            B --第1次重试重试--> C
+            B --第3次失败熔断--> A
+            A -->|捕获异常/记日志| E[继续下一个地块/好友操作,不崩溃]
+        </div>
+    </section>
+
+    <section id="tasks">
+        <h2>🛠️ 3. 计划拆解与原子任务 (Atomized Tasks)</h2>
+        <p>本次重构影响面极大（触及机器人底盘），因此必须严格分阶段、原子化执行。</p>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>阶段</th>
+                    <th>任务内容与方法提取</th>
+                    <th>涉及文件</th>
+                    <th>影响面评估</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><strong>Phase 1</strong></td>
+                    <td>
+                        引入依赖。<br>
+                        在头部引入 `common.js` 内的 <code>withTimeout</code>, <code>withRetry</code> 等方法。
+                    </td>
+                    <td><code>farm.js</code>, <code>friend.js</code></td>
+                    <td><span class="impact-low">低 (纯依赖导入)</span></td>
+                </tr>
+                <tr>
+                    <td><strong>Phase 2</strong></td>
+                    <td>
+                        <p><strong>核心大包方法替换 (farm.js)</strong></p>
+                        替换 <code>getAllLands()</code>、<code>harvest()</code>、<code>plantSeeds()</code> 为
+                        <code>withRetry(withTimeout(...))</code> 包装。<br>
+                        替换 `getReward()` 常规任务为 `createDailyTaskManager` 托管，抛弃原有的强写死判断。
+                    </td>
+                    <td><code>farm.js</code></td>
+                    <td><span class="impact-high">极高 (农场基础循环)</span></td>
+                </tr>
+                <tr>
+                    <td><strong>Phase 3</strong></td>
+                    <td>
+                        <p><strong>高频并发流重构 (friend.js)</strong></p>
+                        重构好友列表巡偷队列 `friendCheckLoop`。将 <code>stealFruit()</code> 等方法包裹进重试网关。<br>
+                        替换部分原生的 <code>sleep()</code> 散弹枪逻辑为基于重试底层的等待机制。
+                    </td>
+                    <td><code>friend.js</code></td>
+                    <td><span class="impact-med">中 (可能导致漏偷，需验证容错)</span></td>
+                </tr>
+            </tbody>
+        </table>
+    </section>
+
+    <section id="impact">
+        <h2>⚠️ 4. 影响面与风险分析 (Impact Analysis)</h2>
+
+        <h3>4.1 会破坏什么？(Risks)</h3>
+        <ul>
+            <li><strong>死锁隐患:</strong> `withRetry` 默认如果不设置抛弃错误，可能导致某个请求在 3 次退避中消耗长达 10~20 秒，从而拖慢其他并发请求。必须要仔细设定
+                `maxRetries: 2` 以及 `delay: 500ms`。</li>
+            <li><strong>防偷时序冲突:</strong> 农场所设计的「防偷 60s 抢收 `harvestUrgent`」是一个**对延时极度敏感**的操作。它<strong>不允许</strong>被套上
+                `withRetry` 长时间悬挂，必须一击即退！</li>
+        </ul>
+
+        <h3>4.2 解决对策 (Mitigation)</h3>
+        <pre><code class="javascript">// 伪代码：在 farm.js 中，针对常规包使用保守防御，针对抢收包使用裸奔/或仅包裹 Timeout
+// 常规地块获取 (允许重试)
+const lands = await withRetry(
+    () => withTimeout(() => sendMsgAsync(req), 5000), 
+    3, 500
+);
+
+// 极限防偷抢收 (仅设置极限超时防御，不重试，失败拉倒)
+const success = await withTimeout(
+    () => sendMsgAsyncUrgent(harvestReq), 
+    3000
+).catch(e => {
+    logger.warn(`防偷网络级丢包: ${e.message}`);
+    return false;
+});
+</code></pre>
+    </section>
+
+    <section id="acceptance">
+        <h2>✅ 5. 验收标准 (Acceptance Criteria)</h2>
+        <ol>
+            <li>代码可正常编译，<code>farm.js</code> 与 <code>friend.js</code> 完全接管了新的 <code>common.js</code> 包装器。</li>
+            <li>挂机机器人能正常起服，未出现 `TypeError: withTimeout is not defined` 等未引用的报错。</li>
+            <li>在网速恶劣或者故意断网断连期间，测试农场种植和好友偷菜<strong>能够输出 Timeout 日志，而不是 Node 服务直接僵死卡住</strong>。</li>
+            <li>常规抢收不会因为重试时间变长而被截胡。</li>
+        </ol>
+    </section>
+
+</body>
+
+</html>

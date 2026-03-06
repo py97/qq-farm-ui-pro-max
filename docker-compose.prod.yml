@@ -1,55 +1,53 @@
-version: '3.8'
-
-# QQ 农场助手 - 生产环境 Docker Compose 配置
+# QQ 农场助手 - 全栈极简生产环境 Docker Compose 配置
 # 使用方法:
-#   启动：docker-compose -f docker-compose.prod.yml up -d
-#   停止：docker-compose -f docker-compose.prod.yml down
-#   查看日志：docker-compose -f docker-compose.prod.yml logs -f
-#   更新：docker-compose -f docker-compose.prod.yml pull && docker-compose -f docker-compose.prod.yml up -d
+#   启动：docker compose up -d (注意: 不再需要 -f 参数, 系统原生新版推荐)
+#   停止：docker compose down
+#   查看日志：docker compose logs -f
+#   更新：docker compose pull && docker compose up -d
 
 services:
+  # ========== 主应用（Node.js + Vue 前端）==========
   qq-farm-bot-ui:
     image: smdk000/qq-farm-bot-ui:latest
-    # 或者使用 GitHub Container Registry
+    # 或者使用 GitHub Container Registry:
     # image: ghcr.io/smdk000/qq-farm-bot-ui:latest
-
     container_name: qq-farm-bot-ui
     hostname: qq-farm-bot
-
-    # 重启策略
     restart: unless-stopped
-
-    # 端口映射
     ports:
-      - "3080:3000"
+      - "${PORT:-3080}:3000"
 
-    # 环境变量
     environment:
-      # 管理员密码（请修改）
-      - ADMIN_PASSWORD=qq007qq008
-      # 时区
+      # 管理员核心密码 (通过 .env 或者系统变量投递)
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-qq007qq008}
       - TZ=Asia/Shanghai
-      # Node 环境
       - NODE_ENV=production
-      # 日志级别（可选：debug, info, warn, error）
       - LOG_LEVEL=info
-      # Ipad860 微信协议服务地址（Docker 内部网络自动解析）
+      # 数据库（Docker 内部网络自动解析关联）
+      - MYSQL_HOST=qq-farm-mysql
+      - MYSQL_PORT=3306
+      - MYSQL_USER=${MYSQL_USER:-qq_farm_user}
+      - MYSQL_PASSWORD=${MYSQL_PASSWORD:-qq007qq008}
+      - MYSQL_DATABASE=${MYSQL_DATABASE:-qq_farm}
+      # Redis 解析
+      - REDIS_HOST=ipad860-redis
+      - REDIS_PORT=6379
+      # Wx 协议端
       - IPAD860_URL=http://ipad860:8058
 
-    # 服务依赖
     depends_on:
-      - ipad860
+      qq-farm-mysql:
+        condition: service_healthy
+      ipad860:
+        condition: service_started
+      ipad860-redis:
+        condition: service_started
 
-    # 数据卷
     volumes:
-      # 核心数据（账号配置、数据库等）
       - ./data:/app/core/data
-      # 日志文件（可选）
       - ./logs:/app/core/logs
-      # 备份目录（可选）
       - ./backup:/app/core/backup
 
-    # 资源限制
     deploy:
       resources:
         limits:
@@ -59,7 +57,6 @@ services:
           cpus: '0.5'
           memory: 256M
 
-    # 健康检查
     healthcheck:
       test: [ "CMD", "wget", "--spider", "-q", "http://localhost:3000/api/ping" ]
       interval: 30s
@@ -67,11 +64,9 @@ services:
       retries: 3
       start_period: 40s
 
-    # 网络配置
     networks:
       - qq-farm-network
 
-    # 日志配置
     logging:
       driver: "json-file"
       options:
@@ -79,16 +74,55 @@ services:
         max-file: "3"
         compress: "true"
 
+  # ========== MySQL 8.0 数据库 ==========
+  qq-farm-mysql:
+    image: mysql:8.0
+    container_name: qq-farm-mysql
+    restart: unless-stopped
+
+    environment:
+      - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD:-qq007qq008}
+      - MYSQL_DATABASE=${MYSQL_DATABASE:-qq_farm}
+      - MYSQL_USER=${MYSQL_USER:-qq_farm_user}
+      - MYSQL_PASSWORD=${MYSQL_PASSWORD:-qq007qq008}
+      - TZ=Asia/Shanghai
+
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+
+    volumes:
+      # 数据持久化
+      - ./mysql-data:/var/lib/mysql
+      # ⭐ 若您的宿主机挂载了初始化的目录映射，即可热插入初始化 sql （此为保留设计可用）
+      - ./init-db:/docker-entrypoint-initdb.d:ro
+
+    networks:
+      - qq-farm-network
+
+    healthcheck:
+      test: [ "CMD", "mysqladmin", "ping", "-h", "localhost" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+
   # ========== Ipad860 微信协议服务 ==========
   ipad860:
     image: smdk000/ipad860:latest
-    platform: linux/amd64 # .so 共享库仅有 x86-64 版本，ARM 机器自动走 QEMU 模拟
+    platform: linux/amd64 # 注意：含有.so包的专用模拟，ARM 采用 QEMU 适配
     container_name: ipad860
     restart: unless-stopped
     environment:
       - TZ=Asia/Shanghai
     depends_on:
-      - redis
+      - ipad860-redis
     deploy:
       resources:
         limits:
@@ -102,14 +136,14 @@ services:
         max-size: "10m"
         max-file: "3"
 
-  # ========== Redis (Ipad860 依赖) ==========
-  redis:
+  # ========== Redis ==========
+  ipad860-redis:
     image: redis:7-alpine
     container_name: ipad860-redis
     restart: unless-stopped
     command: redis-server --appendonly yes
     volumes:
-      - redis-data:/data
+      - ./redis-data:/data
     deploy:
       resources:
         limits:
@@ -124,12 +158,3 @@ networks:
     ipam:
       config:
         - subnet: 172.28.0.0/16
-
-# 数据卷定义
-volumes:
-  qq-farm-data:
-    driver: local
-  qq-farm-logs:
-    driver: local
-  redis-data:
-    driver: local

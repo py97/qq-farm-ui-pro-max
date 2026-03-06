@@ -13,6 +13,39 @@ const loading = ref(false)
 const list = ref<any[]>([])
 const sortKey = useStorage('analytics_sort_key', 'exp')
 const imageErrors = ref<Record<string | number, boolean>>({})
+const strategyPanelCollapsed = useStorage('analytics_strategy_collapsed', false)
+const levelFilter = ref(0) // 0 = 不过滤
+
+// 策略推荐定义 (参考 PR 版 Analytics.vue)
+const strategies = [
+  { key: 'max_exp', label: '经验/时', metric: 'expPerHour', color: 'purple', icon: 'i-carbon-growth', unit: 'EXP', desc: '每小时经验收益最高' },
+  { key: 'max_profit', label: '利润/时', metric: 'profitPerHour', color: 'amber', icon: 'i-carbon-money', unit: '金币', desc: '每小时净利润最高' },
+  { key: 'max_fert_exp', label: '普肥经验/时', metric: 'normalFertilizerExpPerHour', color: 'blue', icon: 'i-carbon-flash', unit: 'EXP', desc: '使用普通化肥后经验最高' },
+  { key: 'max_fert_profit', label: '普肥利润/时', metric: 'normalFertilizerProfitPerHour', color: 'green', icon: 'i-carbon-piggy-bank', unit: '金币', desc: '使用普通化肥后利润最高' },
+]
+
+/** 根据等级过滤并获取策略最优作物 */
+function getStrategyBestPlant(strategyKey: string) {
+  const strategy = strategies.find(s => s.key === strategyKey)
+  if (!strategy || list.value.length === 0) return null
+  const filtered = levelFilter.value > 0
+    ? list.value.filter((item: any) => {
+        const lv = Number(item.level)
+        return Number.isFinite(lv) && lv <= levelFilter.value
+      })
+    : list.value
+  if (filtered.length === 0) return null
+  // 排序后取 Top 1
+  const sorted = [...filtered].sort((a, b) => {
+    const av = Number(a[strategy.metric])
+    const bv = Number(b[strategy.metric])
+    if (!Number.isFinite(av)) return 1
+    if (!Number.isFinite(bv)) return -1
+    return bv - av
+  })
+  const best = sorted[0]
+  return best && Number.isFinite(Number(best[strategy.metric])) ? best : null
+}
 
 const sortOptions = [
   { value: 'exp', label: '经验/小时' },
@@ -125,6 +158,84 @@ function formatGrowTime(seconds: any) {
 
     <div v-else-if="!currentAccountId" class="glass-panel glass-text-muted rounded-xl p-8 text-center shadow-md">
       请选择账号后查看数据分析
+    </div>
+
+    <!-- 策略推荐面板 (T3 - 参考 PR 版) -->
+    <div v-if="list.length > 0" class="glass-panel mb-4 overflow-hidden rounded-xl shadow-md">
+      <div
+        class="flex cursor-pointer items-center justify-between px-4 py-3"
+        @click="strategyPanelCollapsed = !strategyPanelCollapsed"
+      >
+        <div class="flex items-center gap-2">
+          <div class="i-carbon-trophy text-lg text-yellow-500" />
+          <span class="glass-text-main font-bold">策略推荐</span>
+          <span class="glass-text-muted text-xs">根据 4 个维度推荐最优作物</span>
+        </div>
+        <div class="flex items-center gap-2">
+          <div v-if="!strategyPanelCollapsed" class="flex items-center gap-1">
+            <span class="glass-text-muted text-xs">等级≤</span>
+            <input
+              v-model.number="levelFilter"
+              type="number"
+              min="0"
+              placeholder="全部"
+              class="glass-panel w-14 border border-white/20 rounded px-2 py-1 text-center text-sm outline-none focus:border-primary-400 dark:border-white/10"
+            >
+          </div>
+          <div
+            class="i-carbon-chevron-down glass-text-muted text-lg transition-transform"
+            :class="{ 'rotate-180': !strategyPanelCollapsed }"
+          />
+        </div>
+      </div>
+
+      <div v-show="!strategyPanelCollapsed" class="border-t border-white/10 p-4">
+        <div class="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <div
+            v-for="strategy in strategies"
+            :key="strategy.key"
+            class="glass-panel overflow-hidden rounded-lg border border-white/10 p-3 transition-shadow hover:shadow-md"
+          >
+            <!-- 策略标题 -->
+            <div class="mb-2 flex items-center gap-2">
+              <div :class="strategy.icon" class="text-base" :style="{ color: `var(--color-${strategy.color}-500, currentColor)` }" />
+              <span class="glass-text-main text-sm font-semibold">{{ strategy.label }}</span>
+            </div>
+
+            <!-- 推荐作物 -->
+            <div v-if="getStrategyBestPlant(strategy.key)" class="space-y-2">
+              <div class="flex items-center gap-2">
+                <div class="h-8 w-8 flex shrink-0 items-center justify-center overflow-hidden rounded-md bg-primary-500/10">
+                  <img
+                    v-if="getStrategyBestPlant(strategy.key)?.image && !imageErrors[getStrategyBestPlant(strategy.key)?.seedId]"
+                    :src="getStrategyBestPlant(strategy.key)?.image"
+                    class="h-6 w-6 object-contain"
+                    loading="lazy"
+                    @error="imageErrors[getStrategyBestPlant(strategy.key)?.seedId] = true"
+                  >
+                  <div v-else class="i-carbon-sprout text-lg text-primary-500/50" />
+                </div>
+                <div class="min-w-0 flex-1">
+                  <div class="glass-text-main truncate text-sm font-bold">{{ getStrategyBestPlant(strategy.key)?.name }}</div>
+                  <div class="glass-text-muted text-[10px]">Lv{{ formatLv(getStrategyBestPlant(strategy.key)?.level) }}</div>
+                </div>
+              </div>
+              <!-- 效率值 -->
+              <div class="glass-panel rounded-md px-2 py-1.5">
+                <div class="flex items-baseline justify-between">
+                  <span class="glass-text-muted text-xs">{{ strategy.unit }}/时</span>
+                  <span class="text-base font-bold" :style="{ color: `var(--color-${strategy.color}-500, currentColor)` }">
+                    {{ getStrategyBestPlant(strategy.key)?.[strategy.metric] }}
+                  </span>
+                </div>
+              </div>
+            </div>
+            <div v-else class="glass-text-muted py-3 text-center text-xs">
+              暂无可种植作物
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
 
     <div v-else-if="list.length === 0" class="glass-panel glass-text-muted rounded-xl p-8 text-center shadow-md">

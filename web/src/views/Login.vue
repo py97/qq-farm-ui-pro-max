@@ -53,6 +53,12 @@ onMounted(async () => {
   if (rememberUsername.value && savedUsername.value) {
     username.value = savedUsername.value
   }
+
+  // 登录页需要整页滚动，覆盖全局 style.css 中 html/body overflow:hidden
+  document.documentElement.style.overflow = 'auto'
+  document.documentElement.style.height = 'auto'
+  document.body.style.overflow = 'auto'
+  document.body.style.height = 'auto'
 })
 
 const isFormValid = computed(() => {
@@ -127,6 +133,12 @@ function startCooldown(seconds: number) {
 onUnmounted(() => {
   if (cooldownTimer)
     clearInterval(cooldownTimer)
+
+  // 离开登录页时恢复全局滚动锁定（DefaultLayout 自行管理滚动）
+  document.documentElement.style.overflow = ''
+  document.documentElement.style.height = ''
+  document.body.style.overflow = ''
+  document.body.style.height = ''
 })
 
 async function handleLogin() {
@@ -252,17 +264,17 @@ const backgroundStyle = computed(() => {
 
 <template>
   <div
-    class="relative min-h-screen w-screen flex items-center justify-center overflow-hidden transition-all duration-700"
+    class="login-page-root relative min-h-screen w-screen flex items-start justify-center overflow-y-auto py-4 transition-all duration-700 lg:items-center lg:py-0"
     :class="[!appStore.loginBackground ? 'bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-gray-900 dark:to-gray-800' : '']"
     :style="backgroundStyle"
   >
     <!-- 背景遮罩 (仅在有自定义背景时增强可读性) -->
     <div v-if="appStore.loginBackground" class="absolute inset-0 bg-black/30 backdrop-blur-[2px]" />
 
-    <div class="relative z-10 mx-4 max-w-5xl w-full lg:mx-auto">
-      <div class="glass-panel flex flex-col overflow-hidden rounded-3xl shadow-2xl shadow-black/20 ring-1 ring-white/20 lg:flex-row">
+    <div class="relative z-10 mx-4 my-4 max-w-5xl w-full lg:mx-auto lg:my-0">
+      <div class="glass-panel flex flex-col rounded-2xl shadow-2xl shadow-black/20 ring-1 ring-white/20 lg:rounded-3xl lg:flex-row">
         <!-- 左侧：品牌展示区 -->
-        <div class="login-brand-panel relative flex flex-col items-center justify-center p-10 text-center text-white lg:w-5/12">
+        <div class="login-brand-panel relative flex flex-col items-center justify-center px-6 py-4 text-center text-white lg:p-10 lg:w-5/12">
           <!-- 装饰背景 -->
           <div class="pointer-events-none absolute inset-0 opacity-10">
             <svg class="h-full w-full" viewBox="0 0 100 100" preserveAspectRatio="none">
@@ -270,11 +282,11 @@ const backgroundStyle = computed(() => {
             </svg>
           </div>
 
-          <div class="group relative mb-8">
-            <div class="absolute animate-pulse rounded-full bg-white/20 blur-2xl transition-all duration-500 -inset-4 group-hover:bg-white/30" />
-            <div class="relative h-24 w-24 flex rotate-3 items-center justify-center rounded-3xl bg-white shadow-xl transition-transform duration-300 hover:rotate-0">
+          <div class="group relative mb-2 lg:mb-8">
+            <div class="absolute animate-pulse rounded-full bg-white/20 blur-2xl transition-all duration-500 -inset-4 group-hover:bg-white/30 hidden lg:block" />
+            <div class="relative h-12 w-12 flex rotate-3 items-center justify-center rounded-xl bg-white shadow-xl transition-transform duration-300 hover:rotate-0 lg:h-24 lg:w-24 lg:rounded-3xl">
               <!-- 星星小树苗 Logo -->
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 640" class="h-16 w-16">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 640" class="h-8 w-8 lg:h-16 lg:w-16">
                 <defs>
                   <linearGradient id="logoGrad" x1="0" y1="1" x2="0.3" y2="0">
                     <stop offset="0%" stop-color="#15803d" />
@@ -289,12 +301,12 @@ const backgroundStyle = computed(() => {
             </div>
           </div>
 
-          <h1 class="mb-3 text-3xl font-extrabold tracking-tight drop-shadow-lg">
-            <span class="bg-gradient-to-r from-white via-white/90 to-white/70 bg-clip-text text-transparent animate-pulse decoration-clone">
+          <h1 class="mb-1 text-lg font-extrabold tracking-tight drop-shadow-lg lg:mb-3 lg:text-3xl">
+            <span class="bg-gradient-to-r from-white via-white/90 to-white/70 bg-clip-text text-transparent decoration-clone">
               御农·QQ 农场智能助手
             </span>
           </h1>
-          <p class="mb-8 text-white/90 font-medium drop-shadow-md tracking-wide">
+          <p class="mb-2 text-xs text-white/90 font-medium drop-shadow-md tracking-wide lg:mb-8 lg:text-base">
             精简化、自动化的多账号管理助手
           </p>
 
@@ -343,7 +355,7 @@ const backgroundStyle = computed(() => {
         <!-- 右侧：表单区 -->
         <div class="relative flex flex-col lg:w-7/12">
           <!-- Tab 切换 -->
-          <div class="m-6 flex border border-white/20 rounded-xl bg-gray-100/20 p-2 dark:bg-gray-900/20">
+          <div class="m-4 flex border border-white/20 rounded-xl bg-gray-100/20 p-1.5 dark:bg-gray-900/20 lg:m-6 lg:p-2">
             <button
               class="flex-1 rounded-lg py-2.5 text-sm font-bold transition-all duration-300" :class="[
                 activeTab === 'login'
@@ -366,7 +378,7 @@ const backgroundStyle = computed(() => {
             </button>
           </div>
 
-          <div class="flex-1 px-10 pb-10">
+          <div class="flex-1 px-6 pb-6 lg:px-10 lg:pb-10 overflow-y-auto">
             <!-- 登录表单 -->
             <form v-if="activeTab === 'login'" class="space-y-6" @submit.prevent="handleLogin">
               <BaseInput v-model="username" label="用户名" placeholder="请输入用户名" required>
@@ -393,13 +405,13 @@ const backgroundStyle = computed(() => {
                 {{ error }}
               </div>
 
-              <BaseButton type="submit" variant="primary" block size="lg" :loading="loading" :disabled="!isFormValid" class="h-12 rounded-xl shadow-blue-500/25 shadow-lg">
+              <BaseButton type="submit" variant="primary" block size="lg" :loading="loading" :disabled="!isFormValid" class="h-12 rounded-xl shadow-primary-500/25 shadow-lg">
                 {{ loading ? '登录中...' : '开始探索' }}
               </BaseButton>
             </form>
 
             <!-- 注册表单 -->
-            <form v-else class="space-y-5" @submit.prevent="handleRegister">
+            <form v-else class="space-y-3 lg:space-y-5" @submit.prevent="handleRegister">
               <BaseInput v-model="username" label="用户名" placeholder="4-20个字符" required>
                 <template #prefix>
                   <div class="i-carbon-user text-gray-400" />
@@ -448,8 +460,8 @@ const backgroundStyle = computed(() => {
             </form>
           </div>
 
-          <!-- 公告悬浮卡片 -->
-          <div class="mt-auto border-t border-gray-100/50 px-10 pb-8 pt-6 dark:border-gray-700/50">
+          <!-- 公告悬浮卡片（手机端注册时隐藏以节省空间） -->
+          <div class="mt-auto border-t border-gray-100/50 px-6 pb-6 pt-4 dark:border-gray-700/50 lg:px-10 lg:pb-8 lg:pt-6" :class="{ 'hidden lg:block': activeTab === 'register' }">
             <div class="mb-3 flex items-center justify-between">
               <div class="flex items-center gap-2">
                 <div class="i-carbon-notification text-blue-500" />
@@ -463,7 +475,7 @@ const backgroundStyle = computed(() => {
         </div>
       </div>
 
-      <div class="mb-4 mt-6 px-4 text-center z-20 relative">
+      <div class="mb-4 mt-4 px-4 text-center z-20 relative lg:mt-6" :class="{ 'hidden lg:block': activeTab === 'register' }">
         <div class="inline-flex items-center justify-center gap-1.5 px-5 py-2.5 rounded-full bg-white/40 dark:bg-black/40 backdrop-blur-md border border-white/30 dark:border-white/10 shadow-[0_8px_32px_0_rgba(0,0,0,0.1)] transition-all hover:bg-white/60 dark:hover:bg-black/60">
           <p class="glass-text-main text-xs font-bold tracking-wide drop-shadow-sm flex items-center gap-1">
             © 2026 🌌 御农 System <span class="mx-1.5 opacity-30">|</span> 架构与开发:
@@ -491,6 +503,11 @@ const backgroundStyle = computed(() => {
 </template>
 
 <style scoped>
+/* 确保登录页面可以整体滚动（手机端关键） */
+.login-page-root {
+  -webkit-overflow-scrolling: touch;
+}
+
 /* 左侧品牌面板：使用 primary CSS 变量实现主题联动 + 透明度 */
 .login-brand-panel {
   background: linear-gradient(
@@ -527,5 +544,13 @@ const backgroundStyle = computed(() => {
 .scrollbar-thin::-webkit-scrollbar-thumb {
   background: rgba(156, 163, 175, 0.3);
   border-radius: 10px;
+}
+</style>
+
+<!-- 非 scoped：覆盖全局 style.css 中 html,body { overflow: hidden } 以允许登录页滚动 -->
+<style>
+.login-page-root {
+  overflow-y: auto !important;
+  -webkit-overflow-scrolling: touch;
 }
 </style>

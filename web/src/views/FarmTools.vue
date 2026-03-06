@@ -2,17 +2,25 @@
 import { ref, onMounted, onUnmounted } from 'vue'
 
 const menuItems = ref([
-  { id: 'calculator.html', title: '经验时间计算', icon: 'i-carbon-calculator' },
-  { id: 'levels.html', title: '等级氪金模拟', icon: 'i-carbon-chart-evaluation' },
-  { id: 'plants.html', title: '作物图鉴查询', icon: 'i-carbon-catalog' },
-  { id: 'lands.html', title: '土地升级属性', icon: 'i-carbon-map' },
+  { id: 'calculator.html', title: '经验时间计算', icon: 'i-carbon-calculator', shortTitle: '经验计算' },
+  { id: 'levels.html', title: '等级氪金模拟', icon: 'i-carbon-chart-evaluation', shortTitle: '氪金模拟' },
+  { id: 'plants.html', title: '作物图鉴查询', icon: 'i-carbon-catalog', shortTitle: '作物图鉴' },
+  { id: 'lands.html', title: '土地升级属性', icon: 'i-carbon-map', shortTitle: '土地属性' },
 ])
 
 const selectedArticle = ref('calculator.html')
 const iframeRef = ref<HTMLIFrameElement | null>(null)
 
+// 中屏侧栏折叠状态
+const sidebarVisible = ref(false)
+function toggleSidebar() {
+  sidebarVisible.value = !sidebarVisible.value
+}
+
 function selectArticle(articleId: string) {
   selectedArticle.value = articleId
+  // 中小屏下选中菜单项后自动关闭浮动侧栏
+  sidebarVisible.value = false
 }
 
 // 🔧 优化 #1：将绝大部分不依赖 isDark 的静态系统样式提取出来
@@ -421,9 +429,45 @@ onUnmounted(() => {
 
 <template>
   <div class="h-full flex flex-col overflow-hidden p-0 lg:p-4 sm:p-2">
-    <div class="mx-auto h-full max-w-[1600px] w-full flex gap-4">
-      <!-- 左侧分类导航 (复刻帮助中心) -->
-      <aside class="glass-panel h-full w-64 flex shrink-0 flex-col rounded-2xl p-4 shadow-sm transition-all hidden md:flex">
+
+    <!-- ═══ 移动端/中屏 顶部工具选择栏（< lg 时可见） ═══ -->
+    <div class="farm-tools-tab-bar lg:hidden flex items-center gap-1.5 px-2 py-2 overflow-x-auto flex-shrink-0">
+      <button
+        v-for="item in menuItems"
+        :key="'tab-' + item.id"
+        class="farm-tool-tab flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm whitespace-nowrap transition-all flex-shrink-0"
+        :class="[
+          selectedArticle === item.id
+            ? 'farm-tool-tab--active'
+            : 'farm-tool-tab--inactive'
+        ]"
+        @click="selectArticle(item.id)"
+      >
+        <div class="text-base" :class="item.icon" />
+        <span class="font-medium">{{ item.shortTitle }}</span>
+      </button>
+    </div>
+
+    <div class="mx-auto h-full max-w-[1600px] w-full flex gap-4 min-h-0">
+
+      <!-- ═══ 左侧分类导航（≥lg 固定显示；<lg 通过折叠按钮浮动显示）═══ -->
+
+      <!-- 中小屏遮罩层 -->
+      <div
+        v-if="sidebarVisible"
+        class="lg:hidden fixed inset-0 z-20 bg-black/40 backdrop-blur-sm"
+        @click="sidebarVisible = false"
+      />
+
+      <aside
+        class="glass-panel h-full w-64 shrink-0 flex-col rounded-2xl p-4 shadow-sm transition-all duration-300"
+        :class="[
+          // ≥lg：固定显示
+          'lg:flex',
+          // <lg：通过 sidebarVisible 控制浮动显示
+          sidebarVisible ? 'flex fixed lg:static inset-y-4 left-4 z-30' : 'hidden lg:flex'
+        ]"
+      >
         <h2 class="mb-6 from-blue-600 to-indigo-600 bg-gradient-to-r bg-clip-text px-2 text-xl text-transparent font-bold tracking-wide dark:from-cyan-400 dark:to-blue-500">
           农场百科工具
         </h2>
@@ -451,8 +495,19 @@ onUnmounted(() => {
         </nav>
       </aside>
 
-      <!-- 右侧自适应无边界容器 -->
-      <main class="glass-panel h-full min-w-0 flex flex-1 flex-col rounded-2xl overflow-hidden p-0 m-0">
+      <!-- ═══ 右侧自适应无边界容器 ═══ -->
+      <main class="glass-panel h-full min-w-0 flex flex-1 flex-col rounded-2xl overflow-hidden p-0 m-0 relative">
+        <!-- 中屏折叠按钮（lg 以上固定显示侧栏，不显示此按钮） -->
+        <button
+          class="sidebar-toggle-btn flex lg:hidden absolute top-3 left-3 z-10"
+          @click="toggleSidebar"
+          :title="sidebarVisible ? '收起侧栏' : '展开侧栏'"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 transition-transform duration-200" :class="{ 'rotate-180': !sidebarVisible }" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M11 19l-7-7 7-7m8 14l-7-7 7-7" />
+          </svg>
+        </button>
+
         <iframe 
           ref="iframeRef"
           :src="'/nc_local_version/' + selectedArticle" 
@@ -480,5 +535,50 @@ onUnmounted(() => {
 /* iframe 内部背景透明，以便透出 Vue 系统的真实玻璃背景 */
 iframe {
   color-scheme: light dark;
+}
+
+/* ═══ 移动端/中屏顶部 Tab 栏 ═══ */
+.farm-tools-tab-bar {
+  scrollbar-width: none;  /* Firefox */
+  -ms-overflow-style: none;  /* IE */
+}
+.farm-tools-tab-bar::-webkit-scrollbar {
+  display: none;  /* Chrome/Safari */
+}
+
+.farm-tool-tab--active {
+  background: rgba(var(--color-primary-500), 0.15);
+  color: rgb(var(--color-primary-400));
+  border: 1px solid rgba(var(--color-primary-500), 0.25);
+  box-shadow: 0 0 12px rgba(var(--color-primary-500), 0.2);
+}
+
+.farm-tool-tab--inactive {
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text-muted, #94a3b8);
+  border: 1px solid transparent;
+}
+.farm-tool-tab--inactive:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-main, #e2e8f0);
+}
+
+/* ═══ 侧栏折叠按钮 ═══ */
+.sidebar-toggle-btn {
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: rgba(var(--color-primary-500), 0.12);
+  color: rgb(var(--color-primary-400));
+  border: 1px solid rgba(var(--color-primary-500), 0.2);
+  cursor: pointer;
+  transition: all 0.2s;
+  backdrop-filter: blur(8px);
+}
+.sidebar-toggle-btn:hover {
+  background: rgba(var(--color-primary-500), 0.2);
+  box-shadow: 0 0 10px rgba(var(--color-primary-500), 0.25);
 }
 </style>

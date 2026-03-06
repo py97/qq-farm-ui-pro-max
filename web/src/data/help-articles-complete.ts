@@ -277,6 +277,56 @@ export const helpArticles: HelpArticle[] = [
     author: 'QQ Farm Bot Team',
     reviewStatus: 'published',
   },
+
+  // ==================== 运维部署 (4 篇) ====================
+  {
+    id: 'ops-quick-start',
+    category: '运维部署',
+    title: '环境检测与启动',
+    icon: 'i-carbon-terminal',
+    content: `<div class="content-sections"><div class="info-card"><h3>🚀 quick-start.sh — 一键环境检测与启动引导</h3><p>本脚本适用于<strong>裸机部署（非 Docker）</strong>场景，帮助您全自动检测运行环境是否就绪，并一步步引导完成项目启动。</p></div><div class="step-card"><div class="step-number">1</div><div class="step-content"><h4>进入项目根目录</h4><pre>cd /path/to/qq-farm-bot-ui</pre></div></div><div class="step-card"><div class="step-number">2</div><div class="step-content"><h4>执行启动脚本</h4><pre>chmod +x quick-start.sh\n./quick-start.sh</pre></div></div><div class="step-card"><div class="step-number">3</div><div class="step-content"><h4>脚本将自动完成以下检测</h4><ul><li>✅ <strong>Node.js</strong>：检查是否安装 Node.js 20+</li><li>✅ <strong>pnpm</strong>：检查包管理器是否可用</li><li>✅ <strong>MySQL</strong>：检测 MySQL 服务是否运行（可选）</li><li>✅ <strong>Redis</strong>：检测 Redis 服务是否运行（可选）</li><li>✅ <strong>依赖安装</strong>：自动执行 pnpm install</li><li>✅ <strong>前端构建</strong>：自动执行 pnpm build:web</li></ul></div></div><div class="tip-card tip-warning"><div class="tip-header"><div class="i-carbon-warning tip-icon"></div><strong>⚠️ 注意事项</strong></div><ul class="tip-content"><li>脚本仅用于裸机部署，Docker 环境无需使用</li><li>首次运行可能需要较长时间（安装依赖）</li><li>如果检测到缺少组件，脚本会给出安装建议</li></ul></div><div class="tip-card tip-info"><div class="tip-header"><div class="i-carbon-lightbulb tip-icon"></div><strong>💡 配套脚本</strong></div><ul class="tip-content"><li><strong>help.sh</strong>：查看项目结构与可用脚本说明</li><li><strong>show-users.sh</strong>：快速查看已注册用户列表</li></ul></div></div>`,
+    tags: ['运维', '部署', '环境检测', '快速启动', 'quick-start'],
+    updatedAt: '2026-03-05',
+    version: 'v4.2.0',
+    author: 'QQ Farm Bot Team',
+    reviewStatus: 'published',
+  },
+  {
+    id: 'ops-background',
+    category: '运维部署',
+    title: '后台运行方案',
+    icon: 'i-carbon-cloud-services',
+    content: `<div class="content-sections"><div class="info-card"><h3>🌐 choose-background-method.sh — 4 种后台运行方案</h3><p>本脚本提供<strong>交互式菜单</strong>，帮助您根据服务器环境选择最合适的后台运行方式，确保机器人在关闭终端后继续运行。</p></div><div class="step-card"><div class="step-number">1</div><div class="step-content"><h4>启动方案选择器</h4><pre>chmod +x choose-background-method.sh\n./choose-background-method.sh</pre></div></div><div class="feature-grid"><div class="feature-card"><h4>方案 A：自定义守护脚本</h4><ul><li>使用 <code>farm-bot.sh</code></li><li>基于 nohup 的轻量守护</li><li>支持 start / stop / restart / status</li><li><strong>最低门槛，适合所有环境</strong></li></ul></div><div class="feature-card"><h4>方案 B：Systemd 服务</h4><ul><li>运行 <code>install-systemd-service.sh</code></li><li>注册为系统级服务</li><li>开机自启 + 崩溃自动重启</li><li><strong>仅限 Linux 服务器</strong></li></ul></div><div class="feature-card"><h4>方案 C：PM2 进程管理</h4><ul><li>运行 <code>install-pm2.sh</code></li><li>内置日志管理与监控面板</li><li>一键搞定多进程管理</li><li><strong>Node.js 生态首选</strong></li></ul></div><div class="feature-card"><h4>方案 D：Screen 会话</h4><ul><li>运行 <code>start-with-screen.sh</code></li><li>模拟终端窗口持久化</li><li>可随时 attach/detach</li><li><strong>适合临时调试与观察</strong></li></ul></div></div><div class="tip-card tip-success"><div class="tip-header"><div class="i-carbon-checkmark-filled tip-icon"></div><strong>✅ 推荐选择</strong></div><ul class="tip-content"><li><strong>生产服务器（Linux）</strong>：首选 Systemd，次选 PM2</li><li><strong>开发机 / Mac</strong>：使用自定义守护脚本或 Screen</li><li><strong>临时测试</strong>：直接用 Screen 即可</li></ul></div></div>`,
+    tags: ['运维', '后台运行', 'PM2', 'systemd', 'screen', '守护进程'],
+    updatedAt: '2026-03-05',
+    version: 'v4.2.0',
+    author: 'QQ Farm Bot Team',
+    reviewStatus: 'published',
+  },
+  {
+    id: 'ops-password',
+    category: '运维部署',
+    title: '密码重置工具',
+    icon: 'i-carbon-password',
+    content: `<div class="content-sections"><div class="info-card"><h3>🔑 密码重置双神兵 — 管理员密码 & MySQL 密码</h3><p>忘记密码不再是灾难！两个独立脚本可以在完全无法登录的情况下帮您恢复系统访问。</p></div><div class="step-card"><div class="step-number">1</div><div class="step-content"><h4>重置管理员密码（reset-admin-password.sh）</h4><p>适用场景：忘记了 Web 面板的登录密码</p><pre>chmod +x reset-admin-password.sh\n./reset-admin-password.sh</pre><ul><li>脚本会自动连接本地数据库</li><li>使用 PBKDF2 高强度加密算法重写密码</li><li>重置后即可使用新密码登录面板</li><li>默认重置为 <code>admin</code> 或按提示输入新密码</li></ul></div></div><div class="step-card"><div class="step-number">2</div><div class="step-content"><h4>修复 MySQL 密码（fix-mysql-password.sh）</h4><p>适用场景：MySQL root 密码丢失，无法连接数据库</p><pre>chmod +x fix-mysql-password.sh\n./fix-mysql-password.sh</pre><ul><li>自动检测 MySQL 安装与运行状态</li><li>通过安全模式重置 root 密码</li><li>适用于 Mac (Homebrew) 与 Linux (apt/yum)</li></ul></div></div><div class="tip-card tip-warning"><div class="tip-header"><div class="i-carbon-warning tip-icon"></div><strong>⚠️ 安全提醒</strong></div><ul class="tip-content"><li>重置密码后请<strong>立即修改为强密码</strong></li><li>切勿在不安全的网络环境下执行</li><li>建议定期备份数据库</li></ul></div></div>`,
+    tags: ['运维', '密码重置', '管理员', 'MySQL', '安全'],
+    updatedAt: '2026-03-05',
+    version: 'v4.2.0',
+    author: 'QQ Farm Bot Team',
+    reviewStatus: 'published',
+  },
+  {
+    id: 'ops-daemon',
+    category: '运维部署',
+    title: '守护进程管理',
+    icon: 'i-carbon-server-proxy',
+    content: `<div class="content-sections"><div class="info-card"><h3>🔧 farm-bot.sh — 守护进程管理器</h3><p>一个简洁的 Bash 脚本，用于在后台启动、停止、重启和检查机器人运行状态。基于 nohup 实现，无需安装任何额外依赖。</p></div><div class="step-card"><div class="step-number">1</div><div class="step-content"><h4>启动机器人</h4><pre>./farm-bot.sh start</pre><p>将机器人作为后台进程启动，PID 保存在 <code>.farm-bot.pid</code> 文件中。</p></div></div><div class="step-card"><div class="step-number">2</div><div class="step-content"><h4>停止机器人</h4><pre>./farm-bot.sh stop</pre><p>安全地终止后台运行的机器人进程。</p></div></div><div class="step-card"><div class="step-number">3</div><div class="step-content"><h4>重启机器人</h4><pre>./farm-bot.sh restart</pre><p>先停止再启动，适用于配置变更后。</p></div></div><div class="step-card"><div class="step-number">4</div><div class="step-content"><h4>查看运行状态</h4><pre>./farm-bot.sh status</pre><p>显示当前进程 PID、运行时长等信息。</p></div></div><div class="tip-card tip-info"><div class="tip-header"><div class="i-carbon-lightbulb tip-icon"></div><strong>💡 日志查看</strong></div><ul class="tip-content"><li>运行日志输出至 <code>logs/farm-bot.log</code></li><li>可用 <code>tail -f logs/farm-bot.log</code> 实时查看</li><li>也可在 Web 面板的概览页查看实时日志</li></ul></div><div class="tip-card tip-success"><div class="tip-header"><div class="i-carbon-checkmark-filled tip-icon"></div><strong>✅ 脚本列表速查</strong></div><ul class="tip-content"><li><code>quick-start.sh</code> — 环境检测与启动引导</li><li><code>choose-background-method.sh</code> — 后台方案选择器</li><li><code>farm-bot.sh</code> — 守护进程管理 (start/stop/restart/status)</li><li><code>install-pm2.sh</code> — PM2 一键安装与配置</li><li><code>install-systemd-service.sh</code> — Systemd 服务注册</li><li><code>start-with-screen.sh</code> — Screen 会话启动</li><li><code>reset-admin-password.sh</code> — 管理员密码重置</li><li><code>fix-mysql-password.sh</code> — MySQL 密码修复</li><li><code>show-users.sh</code> — 查看注册用户</li><li><code>help.sh</code> — 帮助信息与项目结构</li></ul></div></div>`,
+    tags: ['运维', '守护进程', '后台运行', '进程管理', 'farm-bot'],
+    updatedAt: '2026-03-05',
+    version: 'v4.2.0',
+    author: 'QQ Farm Bot Team',
+    reviewStatus: 'published',
+  },
 ]
 
 // 分类定义
@@ -311,16 +361,22 @@ export const helpCategories = [
     description: '直接套用配置',
     color: 'indigo',
   },
+  {
+    name: '运维部署',
+    icon: 'i-carbon-terminal',
+    description: '服务器运维脚本',
+    color: 'red',
+  },
 ]
 
 // 开发进度追踪
 export const developmentProgress = {
-  totalArticles: 21,
-  completedArticles: 21, // 已完成
+  totalArticles: 25,
+  completedArticles: 25, // 已完成
   draftArticles: 0,
-  lastUpdated: '2026-03-02',
+  lastUpdated: '2026-03-05',
   nextUpdate: '2026-03-??',
-  version: 'v3.9.0',
+  version: 'v4.2.0',
   progress: 100,
   changelog: [
     {

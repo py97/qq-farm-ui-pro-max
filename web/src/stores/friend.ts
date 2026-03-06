@@ -10,6 +10,52 @@ export const useFriendStore = defineStore('friend', () => {
   const friendLandsLoading = ref<Record<string, boolean>>({})
   const blacklist = ref<number[]>([])
 
+  /**
+   * T5: 从土地详情构建植物摘要 (来源: PR 版 friend.ts)
+   * 统计可偷/缺水/杂草/虫害的数量
+   */
+  function buildPlantSummaryFromDetail(lands: any[], summary: any) {
+    const stealNumFromSummary = Array.isArray(summary?.stealable) ? summary.stealable.length : null
+    const dryNumFromSummary = Array.isArray(summary?.needWater) ? summary.needWater.length : null
+    const weedNumFromSummary = Array.isArray(summary?.needWeed) ? summary.needWeed.length : null
+    const insectNumFromSummary = Array.isArray(summary?.needBug) ? summary.needBug.length : null
+
+    let stealNum = stealNumFromSummary
+    let dryNum = dryNumFromSummary
+    let weedNum = weedNumFromSummary
+    let insectNum = insectNumFromSummary
+
+    if (stealNum === null || dryNum === null || weedNum === null || insectNum === null) {
+      stealNum = 0; dryNum = 0; weedNum = 0; insectNum = 0
+      for (const land of (Array.isArray(lands) ? lands : [])) {
+        if (!land || !land.unlocked) continue
+        if (land.status === 'stealable') stealNum++
+        if (land.needWater) dryNum++
+        if (land.needWeed) weedNum++
+        if (land.needBug) insectNum++
+      }
+    }
+
+    return {
+      stealNum: Number(stealNum) || 0,
+      dryNum: Number(dryNum) || 0,
+      weedNum: Number(weedNum) || 0,
+      insectNum: Number(insectNum) || 0,
+    }
+  }
+
+  /**
+   * T5: 同步植物摘要到好友列表 (来源: PR 版 friend.ts)
+   * 展开好友详情后自动同步概览数据
+   */
+  function syncFriendPlantSummary(friendId: string, lands: any[], summary: any) {
+    const key = String(friendId)
+    const idx = friends.value.findIndex(f => String(f?.gid || '') === key)
+    if (idx < 0) return
+    const nextPlant = buildPlantSummaryFromDetail(lands, summary)
+    friends.value[idx] = { ...friends.value[idx], plant: nextPlant }
+  }
+
   async function fetchFriends(accountId: string) {
     if (!accountId)
       return
@@ -61,7 +107,11 @@ export const useFriendStore = defineStore('friend', () => {
         headers: { 'x-account-id': accountId },
       })
       if (res.data.ok) {
-        friendLands.value[friendId] = res.data.data.lands || []
+        const lands = res.data.data.lands || []
+        const summary = res.data.data.summary || null
+        friendLands.value[friendId] = lands
+        // T5: 同步植物摘要到好友列表
+        syncFriendPlantSummary(friendId, lands, summary)
       }
     }
     finally {
