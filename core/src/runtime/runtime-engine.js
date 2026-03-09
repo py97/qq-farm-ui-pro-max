@@ -11,6 +11,7 @@ const { createRuntimeState } = require('./runtime-state')
 const { createWorkerManager } = require('./worker-manager')
 const { updateFriendsCache } = require('../services/database')
 const { createReportService } = require('../services/report-service')
+const accountRepository = require('../repositories/account-repository')
 
 const OPERATION_KEYS = ['harvest', 'water', 'weed', 'bug', 'fertilize', 'plant', 'steal', 'helpWater', 'helpWeed', 'helpBug', 'taskClaim', 'sell', 'upgrade']
 
@@ -78,6 +79,7 @@ function createRuntimeEngine(options = {}) {
     getOfflineAutoDeleteMs,
     triggerOfflineReminder,
     addOrUpdateAccount: store.addOrUpdateAccount,
+    markAccountLoginSuccess: store.markAccountLoginSuccess,
     deleteAccount: store.deleteAccount,
     updateFriendsCache,
     onStatusSync: (accountId, status, accountName) => {
@@ -97,6 +99,7 @@ function createRuntimeEngine(options = {}) {
     globalLogs: GLOBAL_LOGS,
     accountLogs: ACCOUNT_LOGS,
     store,
+    accountRepository,
     getAccounts: getAccountsForProvider,
     callWorkerApi,
     buildDefaultStatus,

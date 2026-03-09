@@ -1,0 +1,2 @@
+ALTER TABLE `accounts`
+ADD COLUMN `last_login_at` DATETIME NULL DEFAULT NULL AFTER `avatar`;

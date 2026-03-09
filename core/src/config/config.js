@@ -2,6 +2,9 @@ const process = require('node:process');
 /**
  * 配置常量与枚举定义
  */
+const { loadProjectEnv } = require('./load-env');
+
+loadProjectEnv();
 
 const CONFIG = {
     serverUrl: 'wss://gate-obt.nqf.qq.com/prod/ws',

@@ -1,0 +1,909 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>QQ 农场 Bot 四版本功能对比分析报告</title>
+    <style>
+        :root {
+            --bg: #0d1117;
+            --surface: #161b22;
+            --card: #1c2333;
+            --border: #30363d;
+            --text: #c9d1d9;
+            --text-muted: #8b949e;
+            --heading: #e6edf3;
+            --accent: #58a6ff;
+            --green: #3fb950;
+            --red: #f85149;
+            --yellow: #d29922;
+            --orange: #db6d28;
+            --purple: #bc8cff;
+            --code-bg: #0d1117;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans SC', Helvetica, Arial, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            line-height: 1.7;
+            padding: 32px;
+            max-width: 1100px;
+            margin: 0 auto;
+        }
+
+        h1 {
+            color: var(--heading);
+            font-size: 28px;
+            font-weight: 700;
+            text-align: center;
+            margin-bottom: 8px;
+            letter-spacing: -0.5px;
+        }
+
+        .subtitle {
+            text-align: center;
+            color: var(--text-muted);
+            font-size: 14px;
+            margin-bottom: 32px;
+        }
+
+        h2 {
+            color: var(--heading);
+            font-size: 22px;
+            font-weight: 600;
+            margin: 40px 0 16px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid var(--border);
+        }
+
+        h3 {
+            color: var(--accent);
+            font-size: 17px;
+            font-weight: 600;
+            margin: 24px 0 12px;
+        }
+
+        p,
+        li {
+            font-size: 14px;
+        }
+
+        p {
+            margin-bottom: 12px;
+        }
+
+        ul,
+        ol {
+            padding-left: 24px;
+            margin-bottom: 16px;
+        }
+
+        li {
+            margin-bottom: 6px;
+        }
+
+        code {
+            background: var(--code-bg);
+            border: 1px solid var(--border);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: 'SF Mono', 'Fira Code', monospace;
+            font-size: 13px;
+            color: var(--accent);
+        }
+
+        pre {
+            background: var(--code-bg);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 16px;
+            overflow-x: auto;
+            margin: 12px 0 20px;
+            font-size: 13px;
+            line-height: 1.5;
+        }
+
+        pre code {
+            border: none;
+            padding: 0;
+            background: none;
+            color: var(--text);
+        }
+
+        .diff-add {
+            color: var(--green);
+        }
+
+        .diff-del {
+            color: var(--red);
+        }
+
+        /* 告警块 */
+        .alert {
+            border-radius: 8px;
+            padding: 16px 20px;
+            margin: 16px 0;
+            border-left: 4px solid;
+            font-size: 14px;
+        }
+
+        .alert-danger {
+            background: rgba(248, 81, 73, 0.08);
+            border-color: var(--red);
+            color: #ffa198;
+        }
+
+        .alert-warning {
+            background: rgba(210, 153, 34, 0.08);
+            border-color: var(--yellow);
+            color: #e3b341;
+        }
+
+        .alert-info {
+            background: rgba(88, 166, 255, 0.08);
+            border-color: var(--accent);
+            color: #79c0ff;
+        }
+
+        .alert strong {
+            display: block;
+            margin-bottom: 6px;
+            font-size: 15px;
+        }
+
+        /* 表格 */
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 16px 0 24px;
+            font-size: 13px;
+        }
+
+        th,
+        td {
+            padding: 10px 14px;
+            text-align: left;
+            border: 1px solid var(--border);
+        }
+
+        th {
+            background: var(--surface);
+            color: var(--heading);
+            font-weight: 600;
+            white-space: nowrap;
+        }
+
+        td {
+            background: var(--card);
+        }
+
+        tr:hover td {
+            background: var(--surface);
+        }
+
+        /* 徽章 */
+        .badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: 600;
+            letter-spacing: 0.5px;
+        }
+
+        .badge-yes {
+            background: rgba(63, 185, 80, 0.2);
+            color: var(--green);
+        }
+
+        .badge-no {
+            background: rgba(248, 81, 73, 0.15);
+            color: var(--red);
+        }
+
+        .badge-p0 {
+            background: rgba(248, 81, 73, 0.2);
+            color: #ffa198;
+        }
+
+        .badge-p1 {
+            background: rgba(210, 153, 34, 0.2);
+            color: #e3b341;
+        }
+
+        .badge-p2 {
+            background: rgba(63, 185, 80, 0.15);
+            color: var(--green);
+        }
+
+        /* 星级 */
+        .stars {
+            color: var(--yellow);
+            letter-spacing: 2px;
+        }
+
+        /* 卡片 */
+        .card-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+            gap: 12px;
+            margin: 16px 0 24px;
+        }
+
+        .card {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 14px 16px;
+        }
+
+        .card-title {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--heading);
+            margin-bottom: 4px;
+        }
+
+        .card-desc {
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+
+        /* 目录 */
+        .toc {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 20px 24px;
+            margin-bottom: 32px;
+        }
+
+        .toc-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: var(--heading);
+            margin-bottom: 10px;
+        }
+
+        .toc a {
+            color: var(--accent);
+            text-decoration: none;
+            font-size: 14px;
+            display: block;
+            padding: 3px 0;
+        }
+
+        .toc a:hover {
+            text-decoration: underline;
+        }
+
+        .toc .sub {
+            padding-left: 20px;
+            font-size: 13px;
+        }
+
+        footer {
+            margin-top: 48px;
+            text-align: center;
+            color: var(--text-muted);
+            font-size: 12px;
+            padding: 20px 0;
+            border-top: 1px solid var(--border);
+        }
+    </style>
+</head>
+
+<body>
+
+    <h1>🌾 QQ 农场 Bot 四版本功能对比分析报告</h1>
+    <p class="subtitle">分析日期：2026-03-08 ｜ 新协议版本 · P大版本 · W大版本 vs 本项目</p>
+
+    <div class="toc">
+        <div class="toc-title">📑 目录</div>
+        <a href="#sec1">一、架构对比总览</a>
+        <a href="#sec2">二、🚨 最关键差异：WASM 加密协议</a>
+        <a class="sub" href="#sec2-1">2.1 新加密协议核心原理</a>
+        <a class="sub" href="#sec2-2">2.2 集成改动要点</a>
+        <a href="#sec3">三、功能模块逐项对比</a>
+        <a class="sub" href="#sec3-1">3.1 本项目独有优势</a>
+        <a class="sub" href="#sec3-2">3.2 新协议版本独有功能</a>
+        <a class="sub" href="#sec3-3">3.3 W大版本独有模块</a>
+        <a class="sub" href="#sec3-4">3.4 P大版本特点</a>
+        <a href="#sec4">四、网络层核心差异详解</a>
+        <a href="#sec5">五、优先级行动建议</a>
+        <a href="#sec6">六、关键参考文件索引</a>
+    </div>
+
+    <!-- ====== 第一章 ====== -->
+    <h2 id="sec1">一、架构对比总览</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>维度</th>
+                <th>新协议版本</th>
+                <th>P大版本</th>
+                <th>W大版本</th>
+                <th>本项目</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td>项目结构</td>
+                <td>单体 <code>server/</code></td>
+                <td><code>core/src/</code> 模块化</td>
+                <td><code>core/src/</code> 模块化</td>
+                <td><code>core/src/</code> + <code>services/</code> 深度模块化</td>
+            </tr>
+            <tr>
+                <td>进程模型</td>
+                <td>单进程 BotInstance</td>
+                <td>Worker Thread</td>
+                <td>Worker Thread</td>
+                <td><strong>Master-Worker 集群</strong></td>
+            </tr>
+            <tr>
+                <td>持久化</td>
+                <td>SQLite</td>
+                <td>JSON-DB</td>
+                <td>JSON-DB</td>
+                <td><strong>MySQL</strong> + JSON</td>
+            </tr>
+            <tr>
+                <td>网络加密</td>
+                <td><span class="badge badge-yes">✅ WASM</span></td>
+                <td><span class="badge badge-yes">✅ WASM</span></td>
+                <td><span class="badge badge-yes">✅ WASM</span></td>
+                <td><span class="badge badge-no">❌ 明文</span></td>
+            </tr>
+            <tr>
+                <td>服务文件数</td>
+                <td>11</td>
+                <td>23</td>
+                <td>25</td>
+                <td><strong>39</strong></td>
+            </tr>
+            <tr>
+                <td>Proto 文件</td>
+                <td>15</td>
+                <td>16</td>
+                <td>16</td>
+                <td>16</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <!-- ====== 第二章 ====== -->
+    <h2 id="sec2">二、🚨 最关键差异：WASM 加密协议</h2>
+
+    <div class="alert alert-danger">
+        <strong>⚠️ 阻断级别警告</strong>
+        三个参考版本已完成 WASM 加密协议适配，本项目<strong>尚未集成</strong>，将导致无法与腾讯服务器正常通信。这是当前最高优先级的适配任务。
+    </div>
+
+    <h3 id="sec2-1">2.1 新加密协议核心原理</h3>
+    <ul>
+        <li><strong>加密方式</strong>：从 <code>.tqapkg</code> 小游戏分包提取 <code>tsdk.wasm</code>（119KB），含 C/C++ 编译的高强度加密算法</li>
+        <li><strong>非对称模式</strong>：<span style="color:var(--red)">请求体必须加密</span>，<span
+                style="color:var(--green)">响应体保持明文 Protobuf</span></li>
+    </ul>
+
+    <p><strong>WASM 导出函数映射表：</strong></p>
+    <table>
+        <thead>
+            <tr>
+                <th>导出符号</th>
+                <th>函数名</th>
+                <th>作用</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><code>exports.E()</code></td>
+                <td>init_runtime</td>
+                <td>初始化 WASM 运行时</td>
+            </tr>
+            <tr>
+                <td><code>exports._</code></td>
+                <td>generateTokenRaw</td>
+                <td>签名/Token 生成</td>
+            </tr>
+            <tr>
+                <td><code>exports.J</code></td>
+                <td>encryptRaw</td>
+                <td>请求体原地加密</td>
+            </tr>
+            <tr>
+                <td><code>exports.K</code></td>
+                <td>decryptRaw</td>
+                <td>请求体原地解密</td>
+            </tr>
+            <tr>
+                <td><code>exports.z</code></td>
+                <td>createBufRaw</td>
+                <td>分配 WASM 内存</td>
+            </tr>
+            <tr>
+                <td><code>exports.A</code></td>
+                <td>destroyBufRaw</td>
+                <td>释放 WASM 内存</td>
+            </tr>
+            <tr>
+                <td><code>exports.v</code></td>
+                <td>memory</td>
+                <td>WASM 内存对象</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <p><strong>需要集成的文件：</strong></p>
+    <table>
+        <thead>
+            <tr>
+                <th>文件</th>
+                <th>大小</th>
+                <th>作用</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><code>crypto-wasm.js</code></td>
+                <td>~3.5KB</td>
+                <td>WASM 加载器/加密封装层</td>
+            </tr>
+            <tr>
+                <td><code>tsdk.wasm</code></td>
+                <td>119KB</td>
+                <td>核心加密二进制模块</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <h3 id="sec2-2">2.2 集成改动要点</h3>
+    <p>参考 P大版本 <code>network.js</code>，核心改动为 <code>encodeMsg</code> 函数：</p>
+    <pre><code><span class="diff-del">- function encodeMsg(serviceName, methodName, bodyBytes) {</span>
+<span class="diff-del">-     const msg = types.GateMessage.create({</span>
+<span class="diff-del">-         body: bodyBytes || Buffer.alloc(0), ...</span>
+<span class="diff-del">-     });</span>
+<span class="diff-add">+ const cryptoWasm = require('./crypto-wasm');</span>
+<span class="diff-add">+</span>
+<span class="diff-add">+ async function encodeMsg(serviceName, methodName, bodyBytes) {</span>
+<span class="diff-add">+     let finalBody = bodyBytes || Buffer.alloc(0);</span>
+<span class="diff-add">+     if (finalBody.length > 0) {</span>
+<span class="diff-add">+         finalBody = await cryptoWasm.encryptBuffer(finalBody);</span>
+<span class="diff-add">+     }</span>
+<span class="diff-add">+     const msg = types.GateMessage.create({</span>
+<span class="diff-add">+         body: finalBody, ...</span>
+<span class="diff-add">+     });</span></code></pre>
+
+    <div class="alert alert-warning">
+        <strong>⚠️ 重要提示</strong>
+        响应体<strong>不需要解密</strong>！新协议逆向记录明确指出，对明文数据调用 <code>decryptBuffer</code> 反而会破坏数据导致 Protobuf 解码异常。
+    </div>
+
+    <!-- ====== 第三章 ====== -->
+    <h2 id="sec3">三、功能模块逐项对比</h2>
+
+    <h3 id="sec3-1">3.1 本项目独有优势（三版本均不具备）</h3>
+    <table>
+        <thead>
+            <tr>
+                <th>#</th>
+                <th>功能</th>
+                <th>实现位置</th>
+                <th>说明</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td>1</td>
+                <td>🛡️ 令牌桶限流器</td>
+                <td><code>network.js</code></td>
+                <td>全局 QPS 限流 + ±20% Jitter Defense 防指纹</td>
+            </tr>
+            <tr>
+                <td>2</td>
+                <td>🔌 断路器熔断</td>
+                <td><code>circuit-breaker.js</code></td>
+                <td>1002003 风控自动熔断 + 半开恢复</td>
+            </tr>
+            <tr>
+                <td>3</td>
+                <td>🚀 紧急请求通道</td>
+                <td><code>sendMsgAsyncUrgent()</code></td>
+                <td>偷菜/抢收优先队列 + Anti-Starvation</td>
+            </tr>
+            <tr>
+                <td>4</td>
+                <td>🗄️ MySQL 持久化</td>
+                <td><code>database/</code> (12文件)</td>
+                <td>企业级数据持久化</td>
+            </tr>
+            <tr>
+                <td>5</td>
+                <td>🔗 集群架构</td>
+                <td><code>cluster/</code> (2文件)</td>
+                <td>Master-Worker 分布式部署</td>
+            </tr>
+            <tr>
+                <td>6</td>
+                <td>📊 定时任务</td>
+                <td><code>jobs/</code> (3文件)</td>
+                <td>独立定时任务管理</td>
+            </tr>
+            <tr>
+                <td>7</td>
+                <td>🌐 多平台适配</td>
+                <td><code>platform/</code> (4文件)</td>
+                <td>wx/qq/wx_ipad 多平台</td>
+            </tr>
+            <tr>
+                <td>8</td>
+                <td>🔒 风控休眠</td>
+                <td><code>userState.suspendUntil</code></td>
+                <td>被封禁后自动休眠 30 分钟</td>
+            </tr>
+            <tr>
+                <td>9</td>
+                <td>🌙 静默时段</td>
+                <td>配置系统</td>
+                <td>夜间自动停止巡查</td>
+            </tr>
+            <tr>
+                <td>10</td>
+                <td>🔄 防雪崩重连</td>
+                <td><code>network.js</code></td>
+                <td>5~25秒随机抖动</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <h3 id="sec3-2">3.2 新协议版本独有功能（考虑借鉴）</h3>
+    <table>
+        <thead>
+            <tr>
+                <th>#</th>
+                <th>功能</th>
+                <th>说明</th>
+                <th>借鉴价值</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td>1</td>
+                <td>⚡ <strong>秒收取</strong></td>
+                <td>作物成熟前 200ms 精准定时收获，防被偷</td>
+                <td><span class="stars">⭐⭐⭐⭐⭐</span> 极高</td>
+            </tr>
+            <tr>
+                <td>2</td>
+                <td>📧 邮件通知</td>
+                <td>掉线邮件提醒 + SMTP 动态配置</td>
+                <td><span class="stars">⭐⭐⭐</span> 中等</td>
+            </tr>
+            <tr>
+                <td>3</td>
+                <td>📊 定时汇报</td>
+                <td>每小时/每日自动发送统计邮件</td>
+                <td><span class="stars">⭐⭐⭐</span> 中等</td>
+            </tr>
+            <tr>
+                <td>4</td>
+                <td>🎯 ServerChan 推送</td>
+                <td>微信推送通道</td>
+                <td><span class="stars">⭐⭐⭐</span> 中等</td>
+            </tr>
+            <tr>
+                <td>5</td>
+                <td>🚫 偷菜作物黑名单</td>
+                <td>指定不偷的作物ID列表</td>
+                <td><span class="stars">⭐⭐⭐⭐</span> 高</td>
+            </tr>
+            <tr>
+                <td>6</td>
+                <td>👥 好友白名单</td>
+                <td>指定不巡查的好友</td>
+                <td><span class="stars">⭐⭐⭐⭐</span> 高</td>
+            </tr>
+            <tr>
+                <td>7</td>
+                <td>🏗️ 土地升级目标</td>
+                <td>自定土地最高升级等级</td>
+                <td><span class="stars">⭐⭐⭐</span> 中等</td>
+            </tr>
+            <tr>
+                <td>8</td>
+                <td>🧪 化肥容器展示</td>
+                <td>首页显示化肥储备时长</td>
+                <td><span class="stars">⭐⭐</span> 低</td>
+            </tr>
+            <tr>
+                <td>9</td>
+                <td>📑 每日历史汇总</td>
+                <td>最近7天收益趋势</td>
+                <td><span class="stars">⭐⭐⭐</span> 中等</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <h3 id="sec3-3">3.3 W大版本独有模块</h3>
+    <table>
+        <thead>
+            <tr>
+                <th>模块</th>
+                <th>文件 (行数)</th>
+                <th>说明</th>
+                <th>借鉴价值</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td>公共工具库</td>
+                <td><code>common.js</code> (~498行)</td>
+                <td>日期/奖励汇总/错误分类/Cooldown/重试/限流/深度合并</td>
+                <td><span class="stars">⭐⭐⭐</span></td>
+            </tr>
+            <tr>
+                <td>配置校验器</td>
+                <td><code>config-validator.js</code> (~356行)</td>
+                <td>Schema-Based 配置校验 + 自动默认值填充</td>
+                <td><span class="stars">⭐⭐⭐⭐</span></td>
+            </tr>
+            <tr>
+                <td>优化调度器</td>
+                <td><code>scheduler-optimized.js</code></td>
+                <td>增强版调度器</td>
+                <td><span class="stars">⭐⭐⭐</span></td>
+            </tr>
+        </tbody>
+    </table>
+
+    <h3 id="sec3-4">3.4 P大版本特点</h3>
+    <div class="card-grid">
+        <div class="card">
+            <div class="card-title">独立帮助/偷菜调度</div>
+            <div class="card-desc">各有独立 interval range (helpMin/Max, stealMin/Max)，互不干扰</div>
+        </div>
+        <div class="card">
+            <div class="card-title">统一调度器</div>
+            <div class="card-desc">runUnifiedTick() 串行执行 Farm→Help→Steal，避免并发</div>
+        </div>
+        <div class="card">
+            <div class="card-title">经验上限检测</div>
+            <div class="card-desc">isHelpExpLimitReached() 配合开关自动停止帮助</div>
+        </div>
+        <div class="card">
+            <div class="card-title">运行时引擎 (5模块)</div>
+            <div class="card-desc">data-provider / relogin-reminder / runtime-engine / runtime-state / worker-manager
+            </div>
+        </div>
+    </div>
+
+    <!-- ====== 第四章 ====== -->
+    <h2 id="sec4">四、网络层核心差异详解</h2>
+
+    <h3>4.1 消息编码流程对比</h3>
+    <p><strong>P大版本（已适配新协议）</strong>：</p>
+    <pre><code>bodyBytes → cryptoWasm.encryptBuffer(bodyBytes) → GateMessage.encode → ws.send</code></pre>
+    <p><strong>本项目（旧协议，待适配）</strong>：</p>
+    <pre><code>bodyBytes → GateMessage.encode → ws.send  <span style="color:var(--text-muted)">（无加密步骤）</span></code></pre>
+
+    <h3>4.2 消息解码流程</h3>
+    <div class="alert alert-info">
+        <strong>📌 四个版本一致</strong>
+        服务端响应体为明文 Protobuf，直接 <code>GateMessage.decode(buf)</code>。新版协议是「非对称」加密——客户端请求须经 WASM 加密处理，接收的状态数据仍为明文。
+    </div>
+
+    <h3>4.3 本项目独有网络高级机制</h3>
+    <ol>
+        <li><strong>令牌桶全局限流</strong>：334ms 间隔 + ±20% 随机抖动 → 防止匀速行为指纹</li>
+        <li><strong>双队列优先级</strong>：urgent/normal + Anti-Starvation 防饿死（每 10 个紧急释放 1 个普通）</li>
+        <li><strong>断路器模式</strong>：1002003 风控 → 全局熔断 → 队列清空 → 半开恢复</li>
+        <li><strong>请求 TTL 丢弃</strong>：好友列表 3s / 常规 5s / 核心操作 15s</li>
+        <li><strong>防雪崩重连抖动</strong>：5~25 秒随机延迟，分散重连峰值</li>
+    </ol>
+
+    <!-- ====== 第五章 ====== -->
+    <h2 id="sec5">五、优先级行动建议</h2>
+
+    <h3>🔴 P0 - 立即执行（阻断级别）</h3>
+    <table>
+        <thead>
+            <tr>
+                <th>#</th>
+                <th>任务</th>
+                <th>说明</th>
+                <th>工作量</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><span class="badge badge-p0">P0</span></td>
+                <td><strong>集成 WASM 加密模块</strong></td>
+                <td>复制 <code>crypto-wasm.js</code> + <code>tsdk.wasm</code>，修改 <code>encodeMsg</code> 为异步加密</td>
+                <td>~2小时</td>
+            </tr>
+            <tr>
+                <td><span class="badge badge-p0">P0</span></td>
+                <td><strong>更新 clientVersion</strong></td>
+                <td>同步为 <code>1.6.2.18_20260227</code></td>
+                <td>极小</td>
+            </tr>
+            <tr>
+                <td><span class="badge badge-p0">P0</span></td>
+                <td><strong>Protobuf 解码容错</strong></td>
+                <td>Notify 消息增加 try-catch + 明文回退</td>
+                <td>~30分钟</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <h3>🟡 P1 - 短期实施（功能增强）</h3>
+    <table>
+        <thead>
+            <tr>
+                <th>#</th>
+                <th>任务</th>
+                <th>来源</th>
+                <th>工作量</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><span class="badge badge-p1">P1</span></td>
+                <td>⚡ 秒收取功能</td>
+                <td>新协议版本</td>
+                <td>中 (~3h)</td>
+            </tr>
+            <tr>
+                <td><span class="badge badge-p1">P1</span></td>
+                <td>🚫 偷菜作物黑名单</td>
+                <td>新协议版本</td>
+                <td>小 (~1h)</td>
+            </tr>
+            <tr>
+                <td><span class="badge badge-p1">P1</span></td>
+                <td>👥 好友白名单/跳过巡查</td>
+                <td>新协议版本</td>
+                <td>小 (~1h)</td>
+            </tr>
+            <tr>
+                <td><span class="badge badge-p1">P1</span></td>
+                <td>🏗️ 土地升级目标等级</td>
+                <td>新协议版本</td>
+                <td>小 (~1h)</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <h3>🟢 P2 - 中期优化（锦上添花）</h3>
+    <table>
+        <thead>
+            <tr>
+                <th>#</th>
+                <th>任务</th>
+                <th>来源</th>
+                <th>工作量</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><span class="badge badge-p2">P2</span></td>
+                <td>配置 Schema 校验器</td>
+                <td>W大版本</td>
+                <td>中 (~3h)</td>
+            </tr>
+            <tr>
+                <td><span class="badge badge-p2">P2</span></td>
+                <td>独立帮助/偷菜间隔</td>
+                <td>P大版本</td>
+                <td>小 (~1h)</td>
+            </tr>
+            <tr>
+                <td><span class="badge badge-p2">P2</span></td>
+                <td>化肥容器数据展示</td>
+                <td>新协议版本</td>
+                <td>小 (~1h)</td>
+            </tr>
+            <tr>
+                <td><span class="badge badge-p2">P2</span></td>
+                <td>多通道通知整合</td>
+                <td>新协议版本</td>
+                <td>中 (~4h)</td>
+            </tr>
+        </tbody>
+    </table>
+
+    <!-- ====== 第六章 ====== -->
+    <h2 id="sec6">六、关键参考文件索引</h2>
+
+    <h3>6.1 WASM 加密相关</h3>
+    <table>
+        <thead>
+            <tr>
+                <th>用途</th>
+                <th>文件</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td>P大 WASM 加密封装</td>
+                <td><code>qq-farm-bot-main-p大/core/src/utils/crypto-wasm.js</code></td>
+            </tr>
+            <tr>
+                <td>P大 WASM 二进制</td>
+                <td><code>qq-farm-bot-main-p大/core/src/utils/tsdk.wasm</code></td>
+            </tr>
+            <tr>
+                <td>P大 网络层（含加密调用）</td>
+                <td><code>qq-farm-bot-main-p大/core/src/utils/network.js</code></td>
+            </tr>
+            <tr>
+                <td>新协议 逆向详细文档</td>
+                <td><code>qq-farm-bot-main-新协议/功能和BUG记录.md</code></td>
+            </tr>
+        </tbody>
+    </table>
+
+    <h3>6.2 功能借鉴参考</h3>
+    <table>
+        <thead>
+            <tr>
+                <th>用途</th>
+                <th>文件</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td>W大 配置校验器</td>
+                <td><code>qq-farm-bot-ui-main -w大/core/src/services/config-validator.js</code></td>
+            </tr>
+            <tr>
+                <td>W大 公共工具库</td>
+                <td><code>qq-farm-bot-ui-main -w大/core/src/services/common.js</code></td>
+            </tr>
+            <tr>
+                <td>P大 Worker 统一调度器</td>
+                <td><code>qq-farm-bot-main-p大/core/src/core/worker.js</code></td>
+            </tr>
+        </tbody>
+    </table>
+
+    <h3>6.3 本项目待修改文件</h3>
+    <table>
+        <thead>
+            <tr>
+                <th>用途</th>
+                <th>文件</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td>网络层（主要修改点）</td>
+                <td><code>core/src/utils/network.js</code></td>
+            </tr>
+            <tr>
+                <td>协议配置</td>
+                <td><code>core/src/config/config.js</code></td>
+            </tr>
+            <tr>
+                <td>Proto 加载</td>
+                <td><code>core/src/utils/proto.js</code></td>
+            </tr>
+        </tbody>
+    </table>
+
+    <footer>
+        QQ 农场 Bot 多版本功能对比分析报告 &copy; 2026-03-08 ｜ 自动生成
+    </footer>
+
+</body>
+
+</html>

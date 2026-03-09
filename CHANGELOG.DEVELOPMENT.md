@@ -6,6 +6,64 @@
 
 ## 📅 最近更新
 
+### 开发复查补记 - 近期优化二次审查与部署密码修正 (2026-03-09)
+
+#### ✅ 本轮补记的新增调整
+- ✅ **部署脚本显式管理员密码真正落库**: `fresh-install.sh` / `update-app.sh` 在检测到显式传入 `ADMIN_PASSWORD` 时，会在容器启动后把 `admin` 账号密码哈希同步到数据库，不再只改 `.env` 却不影响已有管理员账号。
+- ✅ **更新脚本支持同步当前 Shell 环境变量**: `update-app.sh` 现会把 `ADMIN_PASSWORD`、`WEB_PORT` 等显式传入值回写到部署目录 `.env`，避免更新场景下环境变量被静默忽略。
+- ✅ **账号模式元信息已进入面板数据快照**: `accountMode / harvestDelay / riskPromptEnabled / modeScope / accountZone` 已写入运行态账号列表，账号页和归属页可直接展示模式与区服信息。
+- ✅ **经营汇报 SMTP 邮件链路已贯通**: 设置页、服务端归一化、SMTP 发送器和推送分发入口已打通，可按账号配置独立邮件汇报渠道。
+
+#### ⚠️ 本轮二次审查发现的问题
+- ⚠️ **重启广播的邮件渠道仍可能发生认证配置碰撞**: `report-service` 已把 `smtpHost / smtpPort / smtpSecure / sender / recipient` 纳入 `email` 渠道合并键，但在 `emailFrom` 已显式填写时，合并键仍不会再区分 `smtpUser`。若多个账号共用同一发件人别名和收件箱、但 SMTP 登录账号不同，服务器重启广播仍可能错误复用首个账号的认证配置。
+- ⚠️ **主号 / 小号作用范围仍停留在“展示与存储层”**: `modeScope.requiresGameFriend / zoneScope / fallbackBehavior` 已进入设置页文案、接口返回和 store 持久化，但运行时好友/农场决策链路当前仍只消费 `accountMode`，尚未真正按“同区 / 游戏好友 / 降级规则”参与行为判定。
+- ⚠️ **账号设置保存仍存在分步提交的部分成功风险**: 前端保存设置时会先调用 `/api/accounts/:id/mode`，再调用 `/api/settings/save`。如果第二步失败，账号模式切换及其他主号降级可能已生效，但前端仍会整体提示“保存失败”，会造成用户感知与真实状态不一致。
+
+#### 💡 建议
+- 💡 **邮件重启广播按完整认证配置做指纹**: 对 `email` 渠道建议把 `smtpUser` 也纳入分组键，或者直接禁止不同 SMTP 配置的账号在重启广播阶段做合并。
+- 💡 **把 modeScope 真正接入决策层，或暂时降低文案承诺**: 若近期不准备实现“按区服 / 游戏好友降级”行为约束，建议先把设置页说明收敛为“规划中 / 仅做展示”，避免功能感知超前于实际行为。
+- 💡 **把账号模式保存收口为单事务链路**: 建议将模式切换并入 `/api/settings/save` 后端统一提交，或至少在前端仅当模式实际变化时才单独调用 `/api/accounts/:id/mode`，减少部分成功和重复广播。
+
+#### 🧪 本轮核验
+- ✅ `node --check core/src/services/report-service.js`
+- ✅ `node --check core/src/models/store.js`
+- ✅ `node --check core/src/controllers/admin.js`
+- ✅ `node --check core/src/runtime/data-provider.js`
+- ✅ `node --check core/src/services/farm.js`
+- ✅ `bash -n scripts/deploy/fresh-install.sh`
+- ✅ `bash -n scripts/deploy/update-app.sh`
+- ✅ `node --test core/__tests__/store-account-mode.test.js core/__tests__/store-trial-config.test.js`
+
+#### ✅ 本轮已执行修复
+- ✅ **账号设置改为后端单链路处理模式切换**: 设置页保存时已不再额外调用 `/api/accounts/:id/mode`，改为统一通过 `/api/settings/save` 落库并处理主号唯一化，减少“部分成功、整体报错”的风险。
+- ✅ **SMTP 重启广播分组键补齐 `smtpUser`**: 邮件渠道的服务器重启提醒分组现在会额外区分 SMTP 登录账号，避免同发件别名/同收件箱但不同认证账号的配置被错误合并。
+- ✅ **补齐后端回归测试**: 新增 `data-provider-save-settings.test.js` 和 `report-service-restart-broadcast.test.js`，覆盖统一保存链路和邮件广播分组逻辑。
+
+#### ⏳ 当前仍待继续
+- ⏳ **`modeScope` 真实运行时接入尚未完成**: 目前仍需把 `zoneScope / requiresGameFriend / fallbackBehavior` 真正接入好友与农场策略层，当前已修正的是“保存一致性”和“广播分组”问题。
+
+#### ✅ 追加修复 - `modeScope` 运行时接入与策略收口 (2026-03-09)
+- ✅ **账号模式新增统一运行时解析器**: 新增 `core/src/services/account-mode-policy.js`，会基于当前账号、同 owner 对端账号、区服和最近一次好友快照解析 `effectiveMode / collaborationEnabled / degradeReason`，不再只存字段不参与行为。
+- ✅ **好友巡查已改按 `effectiveMode` 执行**: 好友模块现在会先解析账号模式作用范围；当 `fallbackBehavior=strict_block` 且未命中同区/游戏好友条件时，会临时按更保守模式运行，阻断偷菜与捣乱这类高风险动作。
+- ✅ **农场模块已改按 `effectiveMode` 执行**: 收获延迟、防偷 60 秒抢收、秒收入口现在统一看运行时有效模式；顺带修正了“`safe` 预设虽然有延迟配置，但旧逻辑实际不生效”和“防偷逻辑误读 `config.mode`”两处偏差。
+- ✅ **运行态状态快照已带出模式结果**: Worker 状态与账号列表现在会回传 `effectiveMode / collaborationEnabled / degradeReason`，为后续前端显式展示打好数据基础。
+- ✅ **Worker 启动已补好友缓存预热**: 登录成功后会优先读取最近一次 Redis 好友缓存并预热运行时快照，缩短 `requiresGameFriend` 在冷启动阶段的 `friend_relation_unknown` 窗口。
+- ✅ **账号列表已显示“当前生效模式”**: 前端账号页现在会区分“配置模式”和“当前生效模式 / 独立执行原因 / 协同命中状态”，不再只能靠日志判断运行时是否已降级。
+- ✅ **新增解析器回归测试**: 新增 `account-mode-policy.test.js`，覆盖“命中同 owner 游戏好友后恢复协同”和“`strict_block` 在非游戏好友时降级为保守模式”两条主路径。
+
+#### ⚠️ 追加自审结论
+- ⚠️ **游戏好友关系当前依赖最近一次好友快照**: 账号刚启动且好友列表尚未成功拉取时，`requiresGameFriend=true` 会先进入 `friend_relation_unknown` 状态；若同时配置 `strict_block`，该时间窗内会暂时按保守模式运行。
+
+#### 💡 追加建议
+- 💡 **为冷启动补一层好友关系预热**: 后续可考虑在 Worker 启动时先读取 Redis / DB 好友缓存，减少 `friend_relation_unknown` 的冷启动窗口。
+- 💡 **把 `effectiveMode / degradeReason` 显式展示到前端**: 现在后端状态里已有数据，建议账号列表或设置页补一个“当前生效模式/降级原因”提示，避免用户还要靠日志判断。
+
+#### ✅ 追加优化 - 运行态模式前端可视化补齐 (2026-03-09)
+- ✅ **设置页已显示当前运行态判定**: `Settings.vue` 现会同时显示“配置模式 / 当前生效模式 / 协同命中或独立执行状态 / 降级原因”，用户切换账号后可直接看到当前运行时是否已发生降级。
+- ✅ **账号归属页已补模式运行态信息**: `AccountOwnership.vue` 的模式列现在会区分“配置模式”和“生效模式/独立执行原因”，管理员排查跨账号归属和策略生效情况时不再只看到静态配置。
+- ✅ **账号表格排序状态已补持久化读写**: `Accounts.vue` 现在会在页面初始化时恢复表格排序状态，并在切换排序后持久化，顺带消除了相关未使用函数导致的前端类型检查阻塞。
+- ✅ **前端生产构建阻塞已清理**: 清掉 `Settings.vue` 的类型读取问题、`Accounts.vue` 的初始化链路遗漏，以及 `core/src/models/store.js` 的尾随空格后，`pnpm -C web build` 已恢复通过。
+
 ### v4.5.11 - 外观联动补正、邮件汇报与近期优化二次复查 (2026-03-09)
 
 #### 🎨 外观链路补正
@@ -52,6 +110,13 @@
 - ✅ `pnpm -C web check:ui-appearance` 通过
 - ✅ `pnpm -C web build` 通过（Google Fonts 外链告警已消失）
 - ✅ `pnpm -C core build:release` 通过
+
+#### 🧾 补充复查追加（2026-03-09）
+- ✅ **农场补种死循环闭环**: 修正“占用中但阶段未同步”的土地被误判为空地的问题；补种前增加二次复核与短期冷却，避免出现 `空地 -> 买种子 -> Plant code=1001008 -> 再买` 的资源浪费循环。
+- ✅ **服务器重启提醒分组签名补正**: `report-service` 现在会把 `webhook token` 以及 `email` 的 `smtpPort / smtpSecure / smtpUser` 一并纳入渠道签名，避免不同账号组被错误合并到同一条重启广播。
+- ✅ **设置保存副作用减轻**: 设置页改为仅在 `accountMode` 真正变化时才调用 `/api/accounts/:id/mode`，不再每次保存都重复触发主号唯一性检查和 worker 配置广播。
+- ✅ **store 新增单测已恢复可运行**: 针对 `isMysqlInitialized()` 的新依赖，补齐测试 mock，`store-account-mode` 与 `store-trial-config` 两条用例已重新跑通。
+- ✅ **开发文档已追加归档**: 本轮复查结论、影响判断和后续建议已补入 `docs/RECENT_OPTIMIZATION_REVIEW_2026-03-08.md` 的 12.6 节。
 
 ### v4.5.10 - 前端 lint 收口与 CI 恢复 (2026-03-08)
 
@@ -1215,6 +1280,18 @@ connect_error → 识别 "Unauthorized" / "jwt expired"
 - ✅ `/api/system-logs` 数据隔离（非管理员仅可查看自己账号的系统日志）
 - ✅ `/api/stats/trend` 限制为管理员专用（全局聚合统计不暴露给普通用户）
 - ✅ 移除生产调试日志（`/api/accounts` console.log、`analytics.js` console.warn）
+
+#### 🧾 补充复查追加（2026-03-09）
+
+- ✅ 农场补种链路补齐“复核空地 + 已种植冷却 + 按真实成功数记账”，避免 `1001008` 下的购种死循环
+- ✅ 服务器重启提醒增加单批次幂等键与一次延迟重试，启动瞬间推送抖动时可自动补发
+- ✅ AI 服务 `cwd` 改为统一白名单校验，默认只允许项目根；额外工作区需配置 `AI_SERVICE_ALLOWED_CWDS`
+- ✅ 新增 `report-service-restart-broadcast.test.js` 与 `ai-workspace.test.js`，补覆盖广播重试与目录白名单场景
+- ✅ OpenViking 本地开发链路默认端口统一切到 `5432`，并同步 `.env` / `.env.ai` / 服务模板与运维文档
+- ✅ OpenViking 守护脚本与客户端移除根目录 `axios` 依赖，改用 Node 内置 `fetch`，避免本地直接运行时因缺包秒退
+- ✅ OpenViking 守护链路补齐“接管已健康实例 + 端口占用但不健康提示 + 更严格的启动成功判定”，并新增 `ai-autostart-status.test.js`
+- ✅ `ai-autostart.js` 新增 `doctor` 诊断入口，可直接输出 PID、端口监听和最近日志，便于本地 OpenViking/AGFS 残留排查
+- ✅ AI 本地开发链路状态统一引入模式标识：`managed / managed_starting / external / conflict / offline`
 
 ---
 

@@ -1,9 +1,12 @@
+const crypto = require('node:crypto');
 const { createModuleLogger } = require('./logger');
 const { createScheduler } = require('./scheduler');
 const { insertReportLog, pruneReportLogs } = require('./database');
 
 const logger = createModuleLogger('report-service');
 const REPORT_SCAN_INTERVAL_MS = 60 * 1000;
+const RESTART_BROADCAST_DEFAULT_MAX_ATTEMPTS = 2;
+const RESTART_BROADCAST_DEFAULT_RETRY_DELAY_MS = 30 * 1000;
 const REPORT_OPERATION_KEYS = [
     'harvest',
     'water',
@@ -285,6 +288,48 @@ function buildReportPayload(mode, account, runtimeStatus, diff, cfg, notes = [],
     };
 }
 
+function buildReportChannelSignature(cfg = {}) {
+    const channel = String(cfg.channel || '').trim().toLowerCase();
+    if (channel === 'webhook') {
+        return `${channel}:${String(cfg.endpoint || '').trim()}:${String(cfg.token || '').trim()}`;
+    }
+    if (channel === 'email') {
+        return `${channel}:${String(cfg.smtpHost || '').trim()}:${String(cfg.smtpPort || '').trim()}:${String(cfg.smtpSecure || '').trim()}:${String(cfg.smtpUser || '').trim()}:${String(cfg.emailFrom || cfg.smtpUser || '').trim()}:${String(cfg.emailTo || '').trim()}`;
+    }
+    return `${channel}:${String(cfg.token || '').trim()}`;
+}
+
+function buildRestartReminderPayload(cfg = {}, groupedAccounts = []) {
+    const now = new Date();
+    const accountNames = groupedAccounts
+        .map(item => String((item && (item.name || item.nick || item.id)) || '').trim())
+        .filter(Boolean);
+    const displayNames = accountNames.slice(0, 8);
+    const extraCount = Math.max(0, accountNames.length - displayNames.length);
+    const accountLine = displayNames.length > 0
+        ? `${displayNames.join('、')}${extraCount > 0 ? ` 等 ${accountNames.length} 个账号` : ''}`
+        : `共 ${groupedAccounts.length} 个账号`;
+    const lines = [
+        '服务器已完成重启，经营调度与推送链路已恢复。',
+        `恢复时间: ${formatDateTime(now)}`,
+        `关联账号: ${accountLine}`,
+        '说明: 这是系统重启后的统一广播提醒，可用于确认容器/服务已重新上线。',
+    ];
+    return {
+        title: `${String(cfg.title || '经营汇报').trim()} · 服务器重启提醒`,
+        content: lines.join('\n'),
+    };
+}
+
+function createRestartBroadcastBatchId() {
+    return `restart_${Date.now().toString(36)}_${crypto.randomBytes(4).toString('hex')}`;
+}
+
+function buildRestartBroadcastTaskName(batchId, signature) {
+    const hash = crypto.createHash('sha1').update(`${batchId}:${signature}`).digest('hex').slice(0, 16);
+    return `restart_broadcast_retry_${hash}`;
+}
+
 function createReportService(options = {}) {
     const {
         store,
@@ -293,12 +338,21 @@ function createReportService(options = {}) {
         sendPushooMessage,
         log,
         addAccountLog,
+        scheduler: injectedScheduler,
+        restartBroadcastBatchId: injectedRestartBroadcastBatchId,
+        restartBroadcastRetryDelayMs: injectedRestartBroadcastRetryDelayMs,
+        restartBroadcastMaxAttempts: injectedRestartBroadcastMaxAttempts,
     } = options;
 
-    const scheduler = createScheduler('account-report-service');
+    const scheduler = injectedScheduler || createScheduler('account-report-service');
     let started = false;
     let scanning = false;
     let lastRetentionSweepDate = '';
+    let restartBroadcastPrepared = false;
+    const restartBroadcastBatchId = String(injectedRestartBroadcastBatchId || createRestartBroadcastBatchId());
+    const restartBroadcastRetryDelayMs = Math.max(1000, Number.parseInt(injectedRestartBroadcastRetryDelayMs, 10) || RESTART_BROADCAST_DEFAULT_RETRY_DELAY_MS);
+    const restartBroadcastMaxAttempts = Math.max(1, Number.parseInt(injectedRestartBroadcastMaxAttempts, 10) || RESTART_BROADCAST_DEFAULT_MAX_ATTEMPTS);
+    const restartBroadcastStates = new Map();
 
     async function listAccounts() {
         const result = await Promise.resolve(typeof getAccounts === 'function' ? getAccounts() : { accounts: [] });
@@ -495,6 +549,94 @@ function createReportService(options = {}) {
         return { ok: false, error: errorMsg, delivery, preview: payload };
     }
 
+    function addRestartBroadcastAccountLog(event, message, accountId, accountName, extra = {}) {
+        if (typeof addAccountLog !== 'function') return;
+        try {
+            addAccountLog(event, message, accountId, accountName, extra);
+        } catch (error) {
+            logger.warn(`记录服务器重启提醒账号日志失败(${accountId || 'unknown'}): ${error && error.message ? error.message : String(error)}`);
+        }
+    }
+
+    function scheduleRestartBroadcastRetry(state) {
+        state.nextRetryAt = Date.now() + restartBroadcastRetryDelayMs;
+        scheduler.setTimeoutTask(state.taskName, restartBroadcastRetryDelayMs, async () => {
+            await sendRestartBroadcast();
+        });
+    }
+
+    function handleRestartBroadcastFailure(state, errorMessage) {
+        state.lastError = String(errorMessage || '发送失败');
+        if (state.attempts < restartBroadcastMaxAttempts) {
+            scheduleRestartBroadcastRetry(state);
+            logger.warn(`服务器重启提醒发送失败: ${state.lastError}，将在 ${Math.round(restartBroadcastRetryDelayMs / 1000)} 秒后重试 (批次 ${restartBroadcastBatchId}, 第 ${state.attempts}/${restartBroadcastMaxAttempts} 次)`);
+            return;
+        }
+
+        state.failed = true;
+        state.nextRetryAt = 0;
+        logger.warn(`服务器重启提醒最终发送失败: ${state.lastError} (批次 ${restartBroadcastBatchId}, 已尝试 ${state.attempts} 次)`);
+    }
+
+    async function deliverRestartBroadcast(state) {
+        const { cfg, accounts: groupedAccounts } = state;
+        const payload = buildRestartReminderPayload(cfg, groupedAccounts);
+        let delivery;
+        try {
+            delivery = await sendPushooMessage({
+                channel: cfg.channel,
+                endpoint: cfg.endpoint,
+                token: cfg.token,
+                smtpHost: cfg.smtpHost,
+                smtpPort: cfg.smtpPort,
+                smtpSecure: cfg.smtpSecure,
+                smtpUser: cfg.smtpUser,
+                smtpPass: cfg.smtpPass,
+                emailFrom: cfg.emailFrom,
+                emailTo: cfg.emailTo,
+                title: payload.title,
+                content: payload.content,
+            });
+        } catch (error) {
+            delivery = {
+                ok: false,
+                msg: error && error.message ? error.message : String(error),
+            };
+        }
+
+        const delivered = !!(delivery && delivery.ok);
+        state.lastError = delivered ? '' : String((delivery && delivery.msg) || '发送失败');
+
+        for (const account of groupedAccounts) {
+            const accountId = String(account && account.id || '').trim();
+            const accountName = String((account && (account.name || account.nick)) || '').trim();
+            if (!accountId) continue;
+            if (delivered) {
+                addRestartBroadcastAccountLog('report_restart_broadcast', '服务器重启提醒已广播', accountId, accountName, {
+                    channel: cfg.channel,
+                    batchId: restartBroadcastBatchId,
+                    attempt: state.attempts,
+                });
+            } else {
+                addRestartBroadcastAccountLog('report_restart_broadcast_failed', `服务器重启提醒发送失败: ${state.lastError}`, accountId, accountName, {
+                    channel: cfg.channel,
+                    batchId: restartBroadcastBatchId,
+                    attempt: state.attempts,
+                });
+            }
+        }
+
+        if (delivered) {
+            state.delivered = true;
+            state.failed = false;
+            state.nextRetryAt = 0;
+            logger.info(`服务器重启提醒发送成功: 渠道 ${cfg.channel}, 覆盖 ${groupedAccounts.length} 个账号, 批次 ${restartBroadcastBatchId}, 第 ${state.attempts} 次尝试`);
+            return;
+        }
+
+        handleRestartBroadcastFailure(state, state.lastError);
+    }
+
     async function scanDueReports() {
         if (scanning) return;
         scanning = true;
@@ -524,6 +666,75 @@ function createReportService(options = {}) {
         }
     }
 
+    async function sendRestartBroadcast() {
+        try {
+            if (!restartBroadcastPrepared) {
+                const accounts = await listAccounts();
+                const groupedChannels = new Map();
+
+                for (const account of accounts) {
+                    const accountId = String(account && account.id || '').trim();
+                    if (!accountId) continue;
+                    const cfg = store.getReportConfig ? store.getReportConfig(accountId) : null;
+                    if (!cfg || !cfg.enabled) continue;
+                    if (!canSendByConfig(cfg)) continue;
+
+                    const signature = buildReportChannelSignature(cfg);
+                    if (!signature) continue;
+                    const existing = groupedChannels.get(signature);
+                    if (existing) {
+                        existing.accounts.push(account);
+                    } else {
+                        groupedChannels.set(signature, {
+                            cfg,
+                            accounts: [account],
+                        });
+                    }
+                }
+
+                restartBroadcastPrepared = true;
+                for (const [signature, grouped] of groupedChannels.entries()) {
+                    restartBroadcastStates.set(signature, {
+                        batchId: restartBroadcastBatchId,
+                        signature,
+                        cfg: grouped.cfg,
+                        accounts: grouped.accounts,
+                        taskName: buildRestartBroadcastTaskName(restartBroadcastBatchId, signature),
+                        attempts: 0,
+                        delivered: false,
+                        failed: false,
+                        inFlight: false,
+                        nextRetryAt: 0,
+                        lastError: '',
+                    });
+                }
+            }
+
+            if (restartBroadcastStates.size === 0) {
+                logger.info('未发现已启用的经营提醒渠道，跳过服务器重启广播');
+                return;
+            }
+
+            for (const state of restartBroadcastStates.values()) {
+                if (state.delivered || state.failed || state.inFlight) continue;
+                if (state.nextRetryAt > Date.now()) continue;
+
+                state.inFlight = true;
+                state.nextRetryAt = 0;
+                state.attempts += 1;
+                try {
+                    await deliverRestartBroadcast(state);
+                } catch (error) {
+                    handleRestartBroadcastFailure(state, error && error.message ? error.message : String(error));
+                } finally {
+                    state.inFlight = false;
+                }
+            }
+        } catch (error) {
+            logger.warn(`服务器重启提醒广播失败: ${error && error.message ? error.message : String(error)}`);
+        }
+    }
+
     function start() {
         if (started) return;
         started = true;
@@ -531,6 +742,7 @@ function createReportService(options = {}) {
             runImmediately: true,
         });
         logger.info('已启动经营汇报定时扫描服务');
+        void sendRestartBroadcast();
     }
 
     function stop() {
@@ -546,6 +758,21 @@ function createReportService(options = {}) {
         sendDailyReport: async (accountRef) => await sendReport(accountRef, 'daily'),
         scanDueReports,
         runRetentionSweep,
+        sendRestartBroadcast,
+        getRestartBroadcastState: () => ({
+            batchId: restartBroadcastBatchId,
+            states: Array.from(restartBroadcastStates.values()).map(state => ({
+                batchId: state.batchId,
+                signature: state.signature,
+                taskName: state.taskName,
+                attempts: state.attempts,
+                delivered: state.delivered,
+                failed: state.failed,
+                inFlight: state.inFlight,
+                nextRetryAt: state.nextRetryAt,
+                lastError: state.lastError,
+            })),
+        }),
     };
 }
 

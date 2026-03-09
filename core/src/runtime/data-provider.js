@@ -7,6 +7,7 @@ function createDataProvider(options) {
         globalLogs,
         accountLogs,
         store,
+        accountRepository,
         getAccounts,
         callWorkerApi,
         buildDefaultStatus,
@@ -36,6 +37,60 @@ function createDataProvider(options) {
     async function findAccountByAnyRef(accountRef) {
         const list = await getStoredAccountsList();
         return findAccountByRef(list, accountRef);
+    }
+
+    async function persistModeSnapshot(accountId, downgraded = []) {
+        if (!accountRepository || typeof accountRepository.updateConfig !== 'function') {
+            return;
+        }
+
+        const targetSnapshot = typeof store.getConfigSnapshot === 'function'
+            ? (store.getConfigSnapshot(accountId) || {})
+            : {};
+        await accountRepository.updateConfig(accountId, {
+            account_mode: targetSnapshot.accountMode || 'main',
+            harvest_delay_min: targetSnapshot.harvestDelay?.min || 0,
+            harvest_delay_max: targetSnapshot.harvestDelay?.max || 0,
+        });
+
+        for (const item of downgraded) {
+            const downgradedId = String(item && item.id || '').trim();
+            if (!downgradedId) continue;
+            const snapshot = typeof store.getConfigSnapshot === 'function'
+                ? (store.getConfigSnapshot(downgradedId) || {})
+                : {};
+            await accountRepository.updateConfig(downgradedId, {
+                account_mode: snapshot.accountMode || 'main',
+                harvest_delay_min: snapshot.harvestDelay?.min || 0,
+                harvest_delay_max: snapshot.harvestDelay?.max || 0,
+            });
+        }
+    }
+
+    async function applyAccountModeWithinSettings(accountId, requestedMode) {
+        const mode = String(requestedMode || '').trim();
+        if (!mode) {
+            return { downgraded: [] };
+        }
+        if (!store.ACCOUNT_MODE_PRESETS || !store.ACCOUNT_MODE_PRESETS[mode]) {
+            throw new Error('Invalid account mode');
+        }
+
+        let downgraded = [];
+        if (mode === 'main' && typeof store.ensureMainAccountUnique === 'function') {
+            const accounts = await getStoredAccountsList();
+            const target = accounts.find(item => String(item && item.id || '') === String(accountId));
+            const ownerUsername = String((target && target.username) || '').trim();
+            if (ownerUsername) {
+                downgraded = await store.ensureMainAccountUnique(accountId, ownerUsername);
+            }
+        }
+
+        if (typeof store.applyAccountMode === 'function') {
+            store.applyAccountMode(accountId, mode);
+        }
+
+        return { downgraded };
     }
 
     return {
@@ -117,10 +172,13 @@ function createDataProvider(options) {
             }
             const body = (payload && typeof payload === 'object') ? payload : {};
             const automation = (body.automation && typeof body.automation === 'object') ? body.automation : {};
+            const requestedMode = body.accountMode !== undefined ? String(body.accountMode || '').trim() : '';
             const plantingStrategy = (body.plantingStrategy !== undefined) ? body.plantingStrategy : body.strategy;
+            const plantingFallbackStrategy = body.plantingFallbackStrategy;
             const preferredSeedId = (body.preferredSeedId !== undefined)
                 ? body.preferredSeedId
                 : (body.preferredSeed !== undefined ? body.preferredSeed : body.seedId);
+            const inventoryPlanting = body.inventoryPlanting;
             const derivedStealFilter = body.stealFilter !== undefined
                 ? body.stealFilter
                 : ((automation.stealFilterEnabled !== undefined || automation.stealFilterMode !== undefined || automation.stealFilterPlantIds !== undefined)
@@ -140,8 +198,14 @@ function createDataProvider(options) {
                         }
                     : undefined);
             const snapshot = {
+                accountMode: body.accountMode,
+                harvestDelay: body.harvestDelay,
+                riskPromptEnabled: body.riskPromptEnabled,
+                modeScope: body.modeScope,
                 plantingStrategy,
+                plantingFallbackStrategy,
                 preferredSeedId,
+                inventoryPlanting,
                 intervals: body.intervals,
                 friendQuietHours: body.friendQuietHours,
             };
@@ -172,14 +236,24 @@ function createDataProvider(options) {
             if (body.reportConfig !== undefined) {
                 snapshot.reportConfig = body.reportConfig;
             }
+
+            const { downgraded } = await applyAccountModeWithinSettings(accountId, requestedMode);
             store.applyConfigSnapshot(snapshot, { accountId });
+            await persistModeSnapshot(accountId, downgraded);
             const rev = nextConfigRevision();
             broadcastConfigToWorkers(accountId);
+            for (const item of downgraded) {
+                const downgradedId = String(item && item.id || '').trim();
+                if (!downgradedId) continue;
+                broadcastConfigToWorkers(downgradedId);
+            }
             return {
                 strategy: store.getPlantingStrategy(accountId),
                 plantingStrategy: store.getPlantingStrategy(accountId),
+                plantingFallbackStrategy: store.getConfigSnapshot(accountId).plantingFallbackStrategy,
                 preferredSeed: store.getPreferredSeed(accountId),
                 preferredSeedId: store.getPreferredSeed(accountId),
+                inventoryPlanting: store.getConfigSnapshot(accountId).inventoryPlanting,
                 intervals: store.getIntervals(accountId),
                 friendQuietHours: store.getFriendQuietHours(accountId),
                 tradeConfig: store.getTradeConfig ? store.getTradeConfig(accountId) : {},
@@ -216,6 +290,24 @@ function createDataProvider(options) {
                 const storedConnected = !!a.connected;
 
                 a.running = storedRunning || !!worker;
+                const configSnapshot = typeof store.getConfigSnapshot === 'function'
+                    ? (store.getConfigSnapshot(accountId) || {})
+                    : {};
+                a.accountMode = configSnapshot.accountMode || 'main';
+                a.effectiveMode = a.accountMode;
+                a.harvestDelay = configSnapshot.harvestDelay || { min: 0, max: 0 };
+                a.riskPromptEnabled = configSnapshot.riskPromptEnabled !== false;
+                a.modeScope = configSnapshot.modeScope || {
+                    zoneScope: 'same_zone_only',
+                    requiresGameFriend: true,
+                    fallbackBehavior: 'standalone',
+                };
+                a.accountZone = typeof store.resolveAccountZone === 'function'
+                    ? store.resolveAccountZone(a.platform)
+                    : 'unknown_zone';
+                a.collaborationEnabled = false;
+                a.degradeReason = '';
+                a.degradeReasonLabel = '';
 
                 if (worker) {
                     a.wsError = worker.wsError ? { code: worker.wsError.code, message: worker.wsError.message } : null;
@@ -241,6 +333,11 @@ function createDataProvider(options) {
                     a.exp = st.exp || 0;
                     a.coupon = st.coupon || 0;
                     a.uptime = worker.status.uptime || 0;
+                    a.effectiveMode = worker.status.effectiveMode || a.effectiveMode;
+                    a.accountZone = worker.status.accountZone || a.accountZone;
+                    a.collaborationEnabled = !!worker.status.collaborationEnabled;
+                    a.degradeReason = worker.status.degradeReason || '';
+                    a.degradeReasonLabel = worker.status.degradeReasonLabel || '';
                 }
             });
             return data;

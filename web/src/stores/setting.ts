@@ -69,7 +69,10 @@ export interface OfflineConfig {
   token: string
   title: string
   msg: string
+  offlineDeleteEnabled: boolean
   offlineDeleteSec: number
+  webhookCustomJsonEnabled: boolean
+  webhookCustomJsonTemplate: string
 }
 
 export interface ReportConfig {
@@ -263,7 +266,10 @@ export const useSettingStore = defineStore('setting', () => {
       token: '',
       title: '账号下线提醒',
       msg: '账号下线',
-      offlineDeleteSec: 0,
+      offlineDeleteEnabled: false,
+      offlineDeleteSec: 1,
+      webhookCustomJsonEnabled: false,
+      webhookCustomJsonTemplate: '',
     },
     trialConfig: {
       enabled: true,
@@ -386,7 +392,10 @@ export const useSettingStore = defineStore('setting', () => {
           token: '',
           title: '账号下线提醒',
           msg: '账号下线',
-          offlineDeleteSec: 0,
+          offlineDeleteEnabled: false,
+          offlineDeleteSec: 1,
+          webhookCustomJsonEnabled: false,
+          webhookCustomJsonTemplate: '',
         }
       }
     }

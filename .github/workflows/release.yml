@@ -9,7 +9,7 @@ on:
       version:
         description: 'Version'
         required: false
-        default: 'v4.5.10'
+        default: 'v4.5.17'
       latest:
         description: 'Latest'
         required: false
@@ -70,6 +70,8 @@ jobs:
           cp deploy/README.md release-assets/qq-farm-deploy/
           cp -r deploy/init-db release-assets/qq-farm-deploy/
           cp scripts/deploy/fresh-install.sh release-assets/qq-farm-deploy/
+          cp scripts/deploy/repair-mysql.sh release-assets/qq-farm-deploy/
+          cp scripts/deploy/repair-deploy.sh release-assets/qq-farm-deploy/
           cp scripts/deploy/update-app.sh release-assets/qq-farm-deploy/
           cp scripts/deploy/quick-deploy.sh release-assets/qq-farm-deploy/
 

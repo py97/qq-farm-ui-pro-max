@@ -1,6 +1,9 @@
+const { loadProjectEnv } = require('../config/load-env');
 const Redis = require('ioredis');
 const { createModuleLogger } = require('./logger');
 const { circuitBreaker } = require('./circuit-breaker');
+
+loadProjectEnv();
 
 const logger = createModuleLogger('redis-cache');
 let redisDisabled = false;
@@ -12,6 +15,13 @@ function getErrorMessage(err) {
 
 function isAuthError(message) {
     return /NOAUTH|WRONGPASS|authentication required|invalid username-password/i.test(String(message || ''));
+}
+
+function getRedisAuthFailureReason(message) {
+    if (!REDIS_PASSWORD) {
+        return `Redis 要求密码认证，但 REDIS_PASSWORD 未配置 (${REDIS_HOST}:${REDIS_PORT})`;
+    }
+    return `Redis 鉴权失败: ${message}`;
 }
 
 function disableRedis(reason) {
@@ -63,14 +73,14 @@ redis.on('connect', () => {
 
 redis.on('ready', () => {
     if (redisDisabled) return;
-    logger.info('✅ Redis ready');
+    logger.debug('Redis socket ready，等待 PING 鉴权验证');
 });
 
 redis.on('error', (err) => {
     const message = getErrorMessage(err);
     logger.error(`❌ Redis 发生错误: ${message}`);
     if (isAuthError(message)) {
-        disableRedis(`Redis 鉴权失败: ${message}`);
+        disableRedis(getRedisAuthFailureReason(message));
         return;
     }
     if (!redisDisabled)
@@ -108,7 +118,7 @@ async function initRedis() {
     } catch (e) {
         const message = getErrorMessage(e);
         if (isAuthError(message)) {
-            disableRedis(`Redis 鉴权失败: ${message}`);
+            disableRedis(getRedisAuthFailureReason(message));
             return false;
         }
         circuitBreaker.recordFailure(message);

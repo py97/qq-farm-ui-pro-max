@@ -101,16 +101,16 @@ async function runTest() {
 
   // 测试 4: 检查 OpenViking 服务
   console.log('📌 测试 4: 检查 OpenViking 服务');
-  const axios = require('axios');
 
   try {
-    const response = await axios.get('http://localhost:5000/health', {
-      timeout: 5000,
+    const response = await fetch('http://localhost:5432/health', {
+      signal: AbortSignal.timeout(5000),
     });
+    const data = await response.json();
 
-    if (response.data.status === 'healthy') {
+    if (response.ok && data.status === 'healthy') {
       console.log('  ✅ OpenViking 服务运行正常');
-      console.log(`  📂 工作目录：${response.data.workspace}`);
+      console.log(`  📂 工作目录：${data.workspace}`);
     } else {
       console.log('  ❌ OpenViking 服务状态异常');
     }

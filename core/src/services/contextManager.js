@@ -16,9 +16,9 @@ class ContextManager {
   /**
    * 初始化上下文管理器
    */
-  async initialize() {
+    async initialize() {
     try {
-      const baseURL = process.env.OPENVIKING_URL || 'http://localhost:5000';
+      const baseURL = process.env.OPENVIKING_URL || 'http://localhost:5432';
       this.client = new OpenVikingClient(baseURL);
 
       // 检查服务是否可用

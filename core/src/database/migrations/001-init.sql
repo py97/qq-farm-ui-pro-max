@@ -35,6 +35,7 @@ CREATE TABLE IF NOT EXISTS accounts (
   name TEXT,  -- 备注名
   platform TEXT DEFAULT 'qq',  -- qq|wx
   running BOOLEAN DEFAULT false,
+  last_login_at DATETIME,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );

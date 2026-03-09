@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>2026-03-08 QQ 官方扫码修复与微信自愈续签报告</title>
+  <style>
+    :root {
+      --bg: #f5f7fb;
+      --panel: #ffffff;
+      --text: #1f2937;
+      --muted: #6b7280;
+      --border: #dbe3f0;
+      --ok: #0f9d58;
+      --warn: #d97706;
+      --bad: #dc2626;
+      --blue: #2563eb;
+      --blue-soft: #eff6ff;
+      --green-soft: #ecfdf5;
+      --amber-soft: #fff7ed;
+      --red-soft: #fef2f2;
+      --shadow: 0 12px 30px rgba(15, 23, 42, 0.08);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: linear-gradient(180deg, #eef4ff 0%, var(--bg) 100%);
+      color: var(--text);
+      font: 14px/1.7 "SF Pro Text","PingFang SC","Microsoft YaHei",sans-serif;
+    }
+    .wrap {
+      width: min(1200px, calc(100vw - 32px));
+      margin: 24px auto 56px;
+    }
+    .hero, .card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      box-shadow: var(--shadow);
+    }
+    .hero {
+      padding: 28px 30px;
+      background:
+        radial-gradient(circle at top right, rgba(37,99,235,0.15), transparent 34%),
+        linear-gradient(135deg, #ffffff 0%, #f8fbff 100%);
+    }
+    h1 {
+      margin: 0 0 10px;
+      font-size: 28px;
+      line-height: 1.25;
+    }
+    .sub {
+      margin: 0;
+      color: var(--muted);
+      font-size: 15px;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 16px;
+      margin-top: 18px;
+    }
+    .metric {
+      padding: 16px 18px;
+      border-radius: 14px;
+      border: 1px solid var(--border);
+      background: #fbfdff;
+    }
+    .metric .label {
+      color: var(--muted);
+      font-size: 12px;
+      letter-spacing: .04em;
+      text-transform: uppercase;
+    }
+    .metric .value {
+      margin-top: 8px;
+      font-size: 22px;
+      font-weight: 700;
+    }
+    .section {
+      margin-top: 18px;
+      padding: 22px 24px;
+    }
+    h2 {
+      margin: 0 0 12px;
+      font-size: 20px;
+    }
+    h3 {
+      margin: 16px 0 10px;
+      font-size: 16px;
+    }
+    p { margin: 10px 0; }
+    ul {
+      margin: 10px 0 0;
+      padding-left: 20px;
+    }
+    li { margin: 6px 0; }
+    .badge {
+      display: inline-block;
+      padding: 4px 10px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 700;
+      vertical-align: middle;
+    }
+    .ok { color: var(--ok); background: var(--green-soft); }
+    .warn { color: var(--warn); background: var(--amber-soft); }
+    .bad { color: var(--bad); background: var(--red-soft); }
+    .info { color: var(--blue); background: var(--blue-soft); }
+    .note {
+      padding: 14px 16px;
+      border-radius: 14px;
+      border: 1px solid var(--border);
+      background: #fafcff;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 12px;
+      overflow: hidden;
+      border-radius: 14px;
+      border: 1px solid var(--border);
+    }
+    th, td {
+      padding: 12px 14px;
+      text-align: left;
+      border-bottom: 1px solid var(--border);
+      vertical-align: top;
+    }
+    th {
+      background: #f8fbff;
+      font-size: 13px;
+    }
+    tr:last-child td { border-bottom: none; }
+    code {
+      padding: 2px 6px;
+      border-radius: 8px;
+      background: #eef2ff;
+      color: #1d4ed8;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 12px;
+    }
+    .foot {
+      margin-top: 18px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <section class="hero">
+      <h1>QQ 官方扫码修复与微信自愈续签报告</h1>
+      <p class="sub">生成时间：2026-03-08。该报告覆盖本轮代码修复、真实运行态复测、一键部署脚本验证结果，以及当前仍需人工完成的最后一步。</p>
+      <div class="grid">
+        <div class="metric">
+          <div class="label">整体状态</div>
+          <div class="value">部分完成</div>
+        </div>
+        <div class="metric">
+          <div class="label">代码问题</div>
+          <div class="value">已闭环 4 项</div>
+        </div>
+        <div class="metric">
+          <div class="label">真实链路</div>
+          <div class="value">微信恢复运行</div>
+        </div>
+        <div class="metric">
+          <div class="label">剩余阻塞</div>
+          <div class="value">QQ 需再扫 1 次</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="card section">
+      <h2>本轮结论</h2>
+      <ul>
+        <li><span class="badge ok">已修复</span> QQ 扫码主通道已从依赖 <code>aineishe</code> 的 UIN 前置模式切回 <code>q.qq.com</code> 官方流程，现可在不填写 UIN 的情况下创建二维码并轮询状态。</li>
+        <li><span class="badge ok">已修复</span> 微信 <code>wx_car / wx_ipad</code> 账号在进程重启后如果因旧 <code>code</code> 失效触发 <code>400</code>，系统现在会自动调用 <code>ipad860 /api/Wxapp/JSLogin</code> 续签新 <code>code</code> 并自动拉起账号。</li>
+        <li><span class="badge ok">已修复</span> 账号持久化增加了 <code>auth_data</code> 补充信息，避免后续把微信账号的 <code>wxid</code> 退化成错误的数值 <code>uin</code>。</li>
+        <li><span class="badge warn">待人工扫码</span> 当前 QQ 账号 <code>1005</code> 仍保存着旧的失效/临时 <code>code</code>，现有代码已经能正确出新二维码，但这条账号本身仍需真人再扫一次完成更新。</li>
+      </ul>
+    </section>
+
+    <section class="card section">
+      <h2>修复内容</h2>
+      <h3>1. QQ 官方扫码恢复</h3>
+      <ul>
+        <li><code>core/src/services/qrlogin.js</code> 恢复使用官方 <code>GetLoginCode</code>、<code>syncScanSateGetTicket</code>、<code>ide/login</code> 三段式流程。</li>
+        <li>官方接口失败时保留第三方回退能力，但第三方仅作为兜底，不再作为默认主路径。</li>
+        <li><code>core/src/controllers/admin.js</code> 现优先使用扫码状态返回的 <code>authCode</code>，避免再次把临时凭据当成最终授权码落库。</li>
+      </ul>
+
+      <h3>2. 微信启动自愈</h3>
+      <ul>
+        <li><code>core/src/runtime/worker-manager.js</code> 新增微信授权自动续签逻辑。</li>
+        <li>当 <code>wx_car / wx_ipad</code> 启动后收到 <code>ws_error 400</code>，系统会自动使用已保存的 <code>wxid</code> 调用 <code>JSLogin</code> 换取新 <code>code</code>，然后自动重启该账号。</li>
+        <li>真实日志已确认账号 <code>30</code> 在一次失败后自动换出新 <code>code</code> 并重新登录成功。</li>
+      </ul>
+
+      <h3>3. 账号持久化增强</h3>
+      <ul>
+        <li><code>core/src/models/store.js</code> 现在将 <code>uin / qq / code</code> 同步写入 <code>auth_data</code>，并在重载时优先恢复正确字段。</li>
+        <li>该修复针对本轮实测中暴露出的核心缺陷：微信账号重启后数据库中只剩错误的数值 <code>uin</code>，导致后续握手参数失真。</li>
+      </ul>
+    </section>
+
+    <section class="card section">
+      <h2>验证结果</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>验证项</th>
+            <th>结果</th>
+            <th>证据</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>QQ 扫码创建二维码（无 UIN）</td>
+            <td><span class="badge ok">通过</span></td>
+            <td><code>/api/qr/create</code> 返回 <code>ok:true</code>，并生成 <code>https://h5.qzone.qq.com/qqq/code/&lt;32位码&gt;</code> 官方登录链接。</td>
+          </tr>
+          <tr>
+            <td>QQ 扫码轮询未扫码状态</td>
+            <td><span class="badge ok">通过</span></td>
+            <td><code>/api/qr/check</code> 对新生成二维码返回 <code>{ status: "Wait" }</code>，不再出现第三方 <code>400</code>。</td>
+          </tr>
+          <tr>
+            <td>微信账号 30 重启后自动续签</td>
+            <td><span class="badge ok">通过</span></td>
+            <td>3000 实例重启后，账号 <code>30</code> 首次握手 <code>400</code>，随后记录 <code>auth_refresh</code>，自动换出新 <code>code</code> 并重新登录成功。</td>
+          </tr>
+          <tr>
+            <td>微信账号 30 最终运行态</td>
+            <td><span class="badge ok">通过</span></td>
+            <td>当前 <code>/api/accounts</code> 返回：<code>id=30</code>、<code>platform=wx_car</code>、<code>uin=wxd8101315</code>、<code>running=true</code>、<code>connected=true</code>。</td>
+          </tr>
+          <tr>
+            <td>QQ 账号 1005 旧数据恢复</td>
+            <td><span class="badge warn">未完成</span></td>
+            <td>账号 <code>1005</code> 仍持有旧 <code>code</code>，启动即 <code>ws_400</code>。代码路径已修复，但需要在 UI 中重新扫码更新一次该账号。</td>
+          </tr>
+          <tr>
+            <td>TypeScript 构建检查</td>
+            <td><span class="badge ok">通过</span></td>
+            <td><code>vue-tsc -b</code> 已通过。</td>
+          </tr>
+          <tr>
+            <td>前端完整构建</td>
+            <td><span class="badge ok">通过</span></td>
+            <td><code>pnpm build:web</code> 已通过。</td>
+          </tr>
+          <tr>
+            <td>一键部署脚本 fresh install</td>
+            <td><span class="badge ok">通过</span></td>
+            <td>已在 <code>aa.smdk000.com:42</code> 远端完成全新目录安装，容器 <code>qq-farm-bot / mysql / redis / ipad860</code> 全部正常拉起。</td>
+          </tr>
+          <tr>
+            <td>一键更新脚本 update-app</td>
+            <td><span class="badge ok">通过</span></td>
+            <td>远端验证已确认仅重建主程序容器，不重启 MySQL / Redis / ipad860；当镜像拉取失败时会自动回退到源码构建。</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section class="card section">
+      <h2>当前剩余问题</h2>
+      <div class="note">
+        <p><strong>唯一剩余的业务阻塞：</strong> QQ 账号 <code>1005</code> 当前数据库里保存的还是旧的失效/临时登录码。</p>
+        <p>这不是新的代码缺陷，而是旧账号数据还没有完成一次基于新流程的重新授权。现在系统已经能正常生成官方 QQ 二维码，也能正常轮询状态；只差你在 3000 面板里对该账号做一次“扫码更新”。</p>
+      </div>
+      <ul>
+        <li>建议操作：打开账号弹窗，选择 <code>QQ</code>，直接扫码，不要手动粘贴 <code>qzone/qqq/code/&lt;32位码&gt;</code> 这种临时登录链接。</li>
+        <li>当前前端已对这种 URL 增加拦截提示，避免再次把临时二维码链接误当成最终授权码。</li>
+      </ul>
+    </section>
+
+    <section class="card section">
+      <h2>优化建议</h2>
+      <ul>
+        <li><strong>给 QQ 账号也补“失效态可视化”：</strong> 当前 <code>1005</code> 已停止但 API 快照里没有显式保留 <code>wsError</code>，建议把 <code>expired_auth</code> 作为稳定状态字段写回账号表，避免 UI 上看起来只是“停止”。</li>
+        <li><strong>把微信辅助字段单独持久化：</strong> 现在 <code>qq</code> 辅助字段仍可能在部分更新链路里被清空，建议把微信账号的数值 QQ 号也固定写入 <code>auth_data.qq</code> 并在 API 输出时显式保留。</li>
+        <li><strong>将自动续签逻辑下沉成统一服务：</strong> 目前微信续签逻辑在 <code>worker-manager</code> 内部，后续可以抽成独立的“Auth Refresh Service”，统一处理 <code>wx_car / wx_ipad / wx</code>。</li>
+        <li><strong>QQ 手动输入模式增加更强校验：</strong> 建议在服务端也识别明显的临时二维码 URL/码格式，直接拒绝落库，避免再次留下会立即 <code>400</code> 的坏账号。</li>
+        <li><strong>部署发布分离：</strong> 在另一个线程同步完成前，不要进行 git 提交、推送或 Docker 镜像推送；建议等 QQ 账号完成一次真实扫码更新且复测全绿后，再执行最终发布。</li>
+      </ul>
+    </section>
+
+    <section class="card section">
+      <h2>后续动作建议</h2>
+      <ol>
+        <li>你在 3000 面板里对 QQ 账号 <code>1005</code> 做一次扫码更新。</li>
+        <li>我再做一次最终真实链路复测，确认 QQ 也能进入 <code>running=true / connected=true</code>。</li>
+        <li>等你提到的另一个线程同步结束后，我再统一做 git 提交、推送与 Docker 发布，并把 README 的部署说明一并收口。</li>
+      </ol>
+      <p class="foot">本报告不包含最终 git 推送与 Docker 推送结果，因为该动作仍按你的要求处于等待状态。</p>
+    </section>
+  </div>
+</body>
+</html>

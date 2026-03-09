@@ -230,7 +230,7 @@ const AUTOMATION_SCHEMA = {
     vip_gift: { type: 'boolean', default: true, label: 'VIP 礼包' },
     month_card: { type: 'boolean', default: true, label: '月卡' },
     open_server_gift: { type: 'boolean', default: true, label: '开服礼包' },
-    sell: { type: 'boolean', default: true, label: '自动出售' },
+    sell: { type: 'boolean', default: false, label: '自动出售' },
     friend_auto_accept: { type: 'boolean', default: false, label: '自动同意好友' },
     friend_three_phase: { type: 'boolean', default: false, label: '三阶段巡查模式' },
     auto_blacklist_banned: { type: 'boolean', default: true, label: '被封禁好友自动加黑' },

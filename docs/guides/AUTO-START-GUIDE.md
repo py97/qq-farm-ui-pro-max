@@ -187,8 +187,8 @@ logs/
 
 ```javascript
 const CONFIG = {
-  openVikingPort: 5000,              // OpenViking 端口
-  openVikingUrl: 'http://localhost:5000',
+  openVikingPort: 5432,              // OpenViking 端口
+  openVikingUrl: 'http://localhost:5432',
   restartDelay: 3000,                // 重启延迟（毫秒）
   healthCheckInterval: 30000,        // 健康检查间隔（毫秒）
   maxRestarts: 5,                    // 最大重启次数
@@ -235,7 +235,7 @@ pip install -r requirements.txt
 
 **检查健康状态：**
 ```bash
-curl http://localhost:5000/health
+curl http://localhost:5432/health
 ```
 
 **查看进程：**
@@ -291,8 +291,11 @@ healthCheckInterval: 15000  // 改为 15 秒
    ```bash
    node ai-autostart.js status
    # 应该显示：✅ AI 服务守护进程正在运行
+
+   node ai-autostart.js doctor
+   # 异常时可直接看到 PID / 端口 / 近期日志诊断
    
-   curl http://localhost:5000/health
+   curl http://localhost:5432/health
    # 应该返回：{"status":"healthy","workspace":"..."}
    ```
 
@@ -305,7 +308,7 @@ healthCheckInterval: 15000  // 改为 15 秒
    kill -9 <PID>
    
    # 等待 5 秒，检查是否自动重启
-   curl http://localhost:5000/health
+   curl http://localhost:5432/health
    ```
 
 5. **查看日志**

@@ -33,6 +33,15 @@ def initialize_client():
     global client, workspace_path
     
     try:
+        config_file = os.getenv(
+            'OPENVIKING_CONFIG_FILE',
+            str((Path(__file__).resolve().parent / 'ov.conf'))
+        )
+        if Path(config_file).exists():
+            os.environ['OPENVIKING_CONFIG_FILE'] = str(Path(config_file).resolve())
+        else:
+            logger.warning(f"未找到 OpenViking 配置文件，将使用库默认配置: {config_file}")
+
         # 获取配置
         workspace_path = os.getenv('OPENVIKING_WORKSPACE', './openviking_data')
         api_key = os.getenv('DASHSCOPE_API_KEY')
@@ -324,7 +333,7 @@ if __name__ == '__main__':
         # 启动 Flask 服务
         app.run(
             host='0.0.0.0',
-            port=int(os.getenv('OPENVIKING_PORT', '5000')),
+            port=int(os.getenv('OPENVIKING_PORT', '5432')),
             debug=os.getenv('FLASK_DEBUG', 'False').lower() == 'true'
         )
     else:

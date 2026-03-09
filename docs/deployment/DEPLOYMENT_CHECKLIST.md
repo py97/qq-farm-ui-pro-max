@@ -20,7 +20,7 @@
 ### 配置检查
 - [ ] API Key 已配置：`sk-2cabc0684b6943ef81020be207ec8f17`
 - [ ] 模型已配置：`qwen3.5-plus`
-- [ ] 端口已配置：`5000`
+- [ ] 端口已配置：`5432`
 - [ ] 工作目录已配置：`./openviking_data`
 
 ## 功能测试步骤
@@ -49,7 +49,7 @@ npm start
 
 ```bash
 # 健康检查
-curl http://localhost:5000/health
+curl http://localhost:5432/health
 
 # 预期输出：
 # {"status":"healthy","workspace":"./openviking_data"}
@@ -121,14 +121,14 @@ console.log('记忆列表:', memories);
 **检查项**：
 - [ ] Python 版本 >= 3.10
 - [ ] 依赖已安装：`pip install -r requirements.txt`
-- [ ] 端口 5000 未被占用
+- [ ] 端口 5432 未被占用
 - [ ] `.env` 文件存在且配置正确
 
 **解决方案**：
 ```bash
 python3 --version  # 检查版本
 pip list | grep -E 'flask|openviking'  # 检查依赖
-lsof -i :5000  # 检查端口占用
+lsof -i :5432  # 检查端口占用
 ```
 
 ### ❌ AI 助手无法使用
@@ -148,7 +148,7 @@ echo $DASHSCOPE_API_KEY
 curl https://dashscope.aliyuncs.com
 
 # 检查服务状态
-curl http://localhost:5000/health
+curl http://localhost:5432/health
 ```
 
 ### ❌ 上下文检索不准确

@@ -27,11 +27,27 @@ SKIP_DOCKER_PULL="${SKIP_DOCKER_PULL:-0}"
 SKIP_DB_REPAIR="${SKIP_DB_REPAIR:-0}"
 SOURCE_CACHE_DIR="${SOURCE_CACHE_DIR:-${DEPLOY_BASE_DIR}/.qq-farm-build-src/${REPO_REF}}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ADMIN_PASSWORD_EXPLICIT=0
+ADMIN_PASSWORD_OVERRIDE=""
+
+if [ "${ADMIN_PASSWORD+x}" = "x" ] && [ -n "${ADMIN_PASSWORD}" ]; then
+    ADMIN_PASSWORD_EXPLICIT=1
+    ADMIN_PASSWORD_OVERRIDE="${ADMIN_PASSWORD}"
+fi
 
 print_info() { echo -e "${BLUE}[INFO]${NC} $1"; }
 print_success() { echo -e "${GREEN}[OK]${NC} $1"; }
 print_warning() { echo -e "${YELLOW}[WARN]${NC} $1"; }
 print_error() { echo -e "${RED}[ERROR]${NC} $1"; }
+
+mask_secret() {
+    local value="$1"
+    if [ "${#value}" -le 2 ]; then
+        printf '***'
+        return 0
+    fi
+    printf '%s%s%s' "${value:0:1}" "$(printf '%*s' "$(( ${#value} - 2 ))" '' | tr ' ' '*')" "${value: -1}"
+}
 
 trap 'print_error "主程序更新失败，请检查上方日志。"' ERR
 
@@ -104,6 +120,13 @@ copy_file_if_needed() {
     cp "${source_path}" "${target_path}"
 }
 
+mark_current_release() {
+    local current_parent
+    current_parent="$(dirname "${CURRENT_LINK}")"
+    mkdir -p "${current_parent}"
+    ln -sfn "${DEPLOY_DIR}" "${CURRENT_LINK}"
+}
+
 load_deploy_env() {
     local file="$1"
     if [ -f "${file}" ]; then
@@ -112,6 +135,43 @@ load_deploy_env() {
         . "${file}"
         set +a
     fi
+}
+
+set_env_value() {
+    local key="$1"
+    local value="$2"
+    local file="$3"
+    local escaped="${value//&/\\&}"
+    if grep -q "^${key}=" "${file}"; then
+        sed -i.bak "s|^${key}=.*|${key}=${escaped}|" "${file}"
+        rm -f "${file}.bak"
+    else
+        printf '%s=%s\n' "${key}" "${value}" >> "${file}"
+    fi
+}
+
+sync_env_from_shell() {
+    local file="$1"
+    local keys=(
+        ADMIN_PASSWORD
+        WEB_PORT
+        APP_IMAGE
+        COOKIE_SECURE
+        CORS_ORIGINS
+        JWT_SECRET
+        WX_API_KEY
+        WX_API_URL
+        WX_APP_ID
+        LOG_LEVEL
+        TZ
+    )
+
+    local key
+    for key in "${keys[@]}"; do
+        if [ -n "${!key:-}" ]; then
+            set_env_value "${key}" "${!key}" "${file}"
+        fi
+    done
 }
 
 pull_one_image() {
@@ -243,6 +303,7 @@ sync_bundle() {
     local bundle_init_sql=""
     local bundle_update=""
     local bundle_repair=""
+    local bundle_repair_deploy=""
     local bundle_fresh=""
     local bundle_quick=""
 
@@ -264,6 +325,7 @@ sync_bundle() {
         bundle_init_sql="${bundle_dir}/init-db/01-init.sql"
         bundle_update="${SCRIPT_DIR}/update-app.sh"
         bundle_repair="${SCRIPT_DIR}/repair-mysql.sh"
+        bundle_repair_deploy="${SCRIPT_DIR}/repair-deploy.sh"
         bundle_fresh="${SCRIPT_DIR}/fresh-install.sh"
         bundle_quick="${SCRIPT_DIR}/quick-deploy.sh"
     elif [ -f "${SCRIPT_DIR}/docker-compose.yml" ] \
@@ -275,6 +337,7 @@ sync_bundle() {
         bundle_init_sql="${bundle_dir}/init-db/01-init.sql"
         bundle_update="${bundle_dir}/update-app.sh"
         bundle_repair="${bundle_dir}/repair-mysql.sh"
+        bundle_repair_deploy="${bundle_dir}/repair-deploy.sh"
         bundle_fresh="${bundle_dir}/fresh-install.sh"
         bundle_quick="${bundle_dir}/quick-deploy.sh"
     fi
@@ -295,6 +358,11 @@ sync_bundle() {
         else
             download_file "scripts/deploy/repair-mysql.sh" "${target_dir}/repair-mysql.sh"
         fi
+        if [ -n "${bundle_repair_deploy}" ] && [ -f "${bundle_repair_deploy}" ]; then
+            copy_file_if_needed "${bundle_repair_deploy}" "${target_dir}/repair-deploy.sh"
+        else
+            download_file "scripts/deploy/repair-deploy.sh" "${target_dir}/repair-deploy.sh"
+        fi
         copy_file_if_needed "${bundle_fresh}" "${target_dir}/fresh-install.sh"
         copy_file_if_needed "${bundle_quick}" "${target_dir}/quick-deploy.sh"
     else
@@ -309,11 +377,12 @@ sync_bundle() {
 
         download_file "scripts/deploy/update-app.sh" "${target_dir}/update-app.sh"
         download_file "scripts/deploy/repair-mysql.sh" "${target_dir}/repair-mysql.sh"
+        download_file "scripts/deploy/repair-deploy.sh" "${target_dir}/repair-deploy.sh"
         download_file "scripts/deploy/fresh-install.sh" "${target_dir}/fresh-install.sh"
         download_file "scripts/deploy/quick-deploy.sh" "${target_dir}/quick-deploy.sh"
     fi
 
-    chmod +x "${target_dir}/update-app.sh" "${target_dir}/repair-mysql.sh" "${target_dir}/fresh-install.sh" "${target_dir}/quick-deploy.sh"
+    chmod +x "${target_dir}/update-app.sh" "${target_dir}/repair-mysql.sh" "${target_dir}/repair-deploy.sh" "${target_dir}/fresh-install.sh" "${target_dir}/quick-deploy.sh"
 }
 
 wait_for_app() {
@@ -344,13 +413,58 @@ wait_for_app() {
     done
 }
 
+apply_admin_password_override() {
+    if [ "${ADMIN_PASSWORD_EXPLICIT}" != "1" ] || [ -z "${ADMIN_PASSWORD_OVERRIDE}" ]; then
+        return 0
+    fi
+
+    print_info "检测到显式 ADMIN_PASSWORD，正在同步 admin 账号密码..."
+    "${DOCKER[@]}" compose exec -T -e ADMIN_PASSWORD="${ADMIN_PASSWORD_OVERRIDE}" "${COMPOSE_APP_SERVICE}" node - <<'NODE'
+const password = String(process.env.ADMIN_PASSWORD || '');
+if (!password) {
+    process.exit(0);
+}
+
+const security = require('./src/services/security');
+const { getPool } = require('./src/services/mysql-db');
+
+(async () => {
+    const pool = getPool();
+    const passwordHash = security.hashPassword(password);
+    const [rows] = await pool.query('SELECT id FROM users WHERE username = ? LIMIT 1', ['admin']);
+
+    if (rows.length > 0) {
+        await pool.query(
+            'UPDATE users SET password_hash = ?, role = ?, status = ? WHERE username = ?',
+            [passwordHash, 'admin', 'active', 'admin']
+        );
+        console.log('[deploy] admin password updated');
+        return;
+    }
+
+    await pool.query(
+        'INSERT INTO users (username, password_hash, role, status) VALUES (?, ?, ?, ?)',
+        ['admin', passwordHash, 'admin', 'active']
+    );
+    console.log('[deploy] admin password created');
+})().catch((err) => {
+    console.error(err && err.message ? err.message : String(err));
+    process.exit(1);
+});
+NODE
+
+    local masked
+    masked="$(mask_secret "${ADMIN_PASSWORD_OVERRIDE}")"
+    print_success "管理员密码已同步到数据库: ${masked}"
+}
+
 compose_pull_with_retry() {
     if [ "${SKIP_DOCKER_PULL}" = "1" ] || [ "${SKIP_DOCKER_PULL}" = "true" ]; then
         print_info "检测到 SKIP_DOCKER_PULL=${SKIP_DOCKER_PULL}，跳过主程序镜像拉取，直接使用本地镜像。"
         return 0
     fi
 
-    local app_image="${APP_IMAGE:-smdk000/qq-farm-bot-ui:4.5.16}"
+    local app_image="${APP_IMAGE:-smdk000/qq-farm-bot-ui:4.5.17}"
     if ! pull_image_or_build "${app_image}"; then
         print_error "主程序镜像拉取最终失败: ${app_image}"
         print_error "请检查 GitHub / Docker Hub 官方网络连通性，或在 .env 中覆盖 APP_IMAGE。"
@@ -371,6 +485,8 @@ main() {
         APP_IMAGE="${APP_IMAGE_OVERRIDE}"
     fi
     sync_bundle "${DEPLOY_DIR}"
+    mark_current_release
+    sync_env_from_shell "${DEPLOY_DIR}/.env"
     load_deploy_env "${DEPLOY_DIR}/.env"
     APP_SERVICE="${APP_SERVICE:-qq-farm-bot}"
     COMPOSE_APP_SERVICE="${COMPOSE_APP_SERVICE:-${APP_SERVICE}}"
@@ -395,6 +511,7 @@ main() {
     compose_pull_with_retry
     "${DOCKER[@]}" compose up -d --no-deps "${COMPOSE_APP_SERVICE}"
     wait_for_app 240
+    apply_admin_password_override
 
     new_image="$("${DOCKER[@]}" inspect -f '{{.Image}}' "${APP_CONTAINER_NAME}" 2>/dev/null || true)"
 
@@ -408,6 +525,7 @@ main() {
     echo "旧镜像 ID: ${old_image:-unknown}"
     echo "新镜像 ID: ${new_image:-unknown}"
     echo "未变更服务: qq-farm-mysql / qq-farm-redis / qq-farm-ipad860"
+    echo "部署包修复脚本: ${DEPLOY_DIR}/repair-deploy.sh"
     echo "数据库修复脚本: ${DEPLOY_DIR}/repair-mysql.sh"
     echo ""
 }

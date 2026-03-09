@@ -29,17 +29,21 @@
 bash <(curl -fsSL https://raw.githubusercontent.com/smdk000/qq-farm-ui-pro-max/main/scripts/deploy/fresh-install.sh)
 ```
 
-自 `v4.5.16` 起，部署链路额外内置 `repair-mysql.sh`。全新安装会在启动后自动补齐 MySQL 旧结构；已部署环境更新主程序前，也会先执行一次数据库修复。只要主程序镜像版本不低于 `v4.5.16`，旧版本因数据库结构滞后导致的账号丢失、体验卡状态漂移和卡密管理结构缺失就不会继续复现。
+自 `v4.5.17` 起，部署目录会固定带上两类修复脚本：
+
+- `repair-mysql.sh`：修复旧 MySQL 结构、补齐缺失表/列并回填历史数据
+- `repair-deploy.sh`：修复旧部署目录缺脚本、缺 `docker-compose.yml`、缺 `init-db`、缺 `/opt/qq-farm-bot-current` 链接的问题
 
 脚本会自动：
 
 - 安装或检查 Docker / Docker Compose
 - 检查 Web 端口占用，必要时切换到新的可用端口
 - 在 `/opt/YYYY_MM_DD/qq-farm-bot` 创建部署目录，并维护 `/opt/qq-farm-bot-current` 当前版本链接
-- 下载 `docker-compose.yml`、`.env.example`、初始化 SQL、README、一键部署/更新脚本
+- 下载 `docker-compose.yml`、`.env.example`、初始化 SQL、README、一键部署/更新/修复脚本
 - 启动全部 4 个容器并等待健康检查
 - 默认使用 GitHub 官方源和 Docker Hub 官方仓库
 - 主程序镜像或 `ipad860` 镜像仍不可拉取时，自动下载 GitHub 源码包并在服务器本地构建
+- 启动完成后自动执行一次 `repair-mysql.sh`
 
 无交互部署示例：
 
@@ -51,7 +55,7 @@ bash <(curl -fsSL https://raw.githubusercontent.com/smdk000/qq-farm-ui-pro-max/m
 可选镜像配置（写入 `.env`）：
 
 ```bash
-APP_IMAGE=smdk000/qq-farm-bot-ui:4.5.16
+APP_IMAGE=smdk000/qq-farm-bot-ui:4.5.17
 MYSQL_IMAGE=mysql:8.0
 REDIS_IMAGE=redis:7-alpine
 IPAD860_IMAGE=smdk000/ipad860:latest
@@ -69,10 +73,10 @@ mkdir -p init-db
 cp /path/to/deploy/init-db/01-init.sql init-db/
 cp /path/to/scripts/deploy/update-app.sh .
 cp /path/to/scripts/deploy/repair-mysql.sh .
+cp /path/to/scripts/deploy/repair-deploy.sh .
 cp /path/to/scripts/deploy/fresh-install.sh .
 cp /path/to/scripts/deploy/quick-deploy.sh .
-chmod +x update-app.sh
-chmod +x repair-mysql.sh fresh-install.sh quick-deploy.sh
+chmod +x update-app.sh repair-mysql.sh repair-deploy.sh fresh-install.sh quick-deploy.sh
 
 # 按需修改密码、端口、第三方扫码参数
 vi .env
@@ -97,7 +101,7 @@ cd /opt/qq-farm-bot-current
 bash update-app.sh
 
 # 如需切到指定版本
-bash update-app.sh --image smdk000/qq-farm-bot-ui:4.5.16
+bash update-app.sh --image smdk000/qq-farm-bot-ui:4.5.17
 
 # 仅执行历史数据库修复
 bash repair-mysql.sh --backup
@@ -106,7 +110,35 @@ bash repair-mysql.sh --backup
 说明：
 
 - `update-app.sh` 会先执行 `repair-mysql.sh`，再更新主程序镜像。
-- `repair-mysql.sh` 可重复执行，用于补齐缺失表/列并回填旧的体验卡历史数据。
+- `update-app.sh` 会同步更新部署目录里的 `docker-compose.yml`、`.env.example`、README 和修复脚本。
+- `update-app.sh` 会重新维护 `/opt/qq-farm-bot-current` 链接，避免旧服软链接丢失。
+
+## 场景 3：旧服务器先修复部署包，再升级到最新版本
+
+适用于这些情况：
+
+- 部署目录里没有 `repair-mysql.sh` / `update-app.sh`
+- `docker-compose.yml`、`init-db/01-init.sql`、`.env.example` 已经很旧
+- `/opt/qq-farm-bot-current` 丢失或指向错误目录
+- 需要先把旧服务器修到最新部署结构，再升级主程序
+
+```bash
+cd /opt/qq-farm-bot-current 2>/dev/null || cd /opt
+curl -fsSLo repair-deploy.sh https://raw.githubusercontent.com/smdk000/qq-farm-ui-pro-max/main/scripts/deploy/repair-deploy.sh
+chmod +x repair-deploy.sh
+
+# 先修部署包
+./repair-deploy.sh --backup
+
+# 再升级主程序
+./update-app.sh --image smdk000/qq-farm-bot-ui:4.5.17
+```
+
+可选参数：
+
+- `./repair-deploy.sh --backup`：先打包备份当前部署文件
+- `./repair-deploy.sh --run-db-repair`：修部署包后顺带执行一次 `repair-mysql.sh`
+- `./repair-deploy.sh --preserve-compose`：只补脚本和 `.env.example`，不覆盖现有 `docker-compose.yml`
 
 ## 验证部署
 
@@ -136,6 +168,8 @@ qq-farm-bot/
 ├── .env
 ├── .env.example
 ├── update-app.sh
+├── repair-mysql.sh
+├── repair-deploy.sh
 ├── README.md
 └── init-db/
     └── 01-init.sql
@@ -158,13 +192,16 @@ docker compose restart
 
 # 只更新主程序
 ./update-app.sh
+
+# 修复旧部署包
+./repair-deploy.sh --backup
 ```
 
 ## 说明
 
 - `deploy/init-db/01-init.sql` 仅用于 MySQL 空数据卷首次初始化。
-- 已部署环境更新主程序时不会重新执行 `init-db/01-init.sql`，而是依赖主程序启动时的自动迁移补齐缺失表/列。
-- 如果仍在运行旧版 `qq-farm-bot` 镜像，部署脚本和 SQL 已更新也无法消除旧版本的账号持久化缺陷。
+- 已部署环境更新主程序时不会重新执行 `init-db/01-init.sql`，而是依赖 `repair-mysql.sh` 和主程序自动迁移补齐缺失结构。
+- 如果服务器仍在运行旧版 `qq-farm-bot` 镜像，单独替换脚本文件无法彻底修复旧结构问题，仍需执行 `update-app.sh` 升级主程序镜像。
 - 默认管理员会在首次启动时自动创建，不会写死在 SQL 里。
 - `REDIS_PASSWORD` 默认为空；如启用密码，主程序与 ipad860 会使用同一值。
 - ARM64 服务器上，`ipad860` 以 `linux/amd64` 方式运行，依赖宿主机的 QEMU 兼容能力。

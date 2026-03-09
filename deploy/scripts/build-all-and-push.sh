@@ -19,7 +19,7 @@ BLUE='\033[0;34m'
 NC='\033[0m'
 
 # 配置
-VERSION=${1:-"4.5.10"}
+VERSION=${1:-"4.5.17"}
 DOCKERHUB_USER="smdk000"
 PROJECT_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 
@@ -145,6 +145,7 @@ export_offline() {
     cp -r "${PROJECT_ROOT}/deploy/init-db" "${TMP_DEPLOY_DIR}/"
     cp "${PROJECT_ROOT}/scripts/deploy/fresh-install.sh" "${TMP_DEPLOY_DIR}/"
     cp "${PROJECT_ROOT}/scripts/deploy/repair-mysql.sh" "${TMP_DEPLOY_DIR}/"
+    cp "${PROJECT_ROOT}/scripts/deploy/repair-deploy.sh" "${TMP_DEPLOY_DIR}/"
     cp "${PROJECT_ROOT}/scripts/deploy/update-app.sh" "${TMP_DEPLOY_DIR}/"
     cp "${PROJECT_ROOT}/scripts/deploy/quick-deploy.sh" "${TMP_DEPLOY_DIR}/"
     tar czf "${EXPORT_DIR}/qq-farm-bot-deploy.tar.gz" -C "${TMP_DEPLOY_DIR}" .
@@ -159,7 +160,7 @@ export_offline() {
     cp deploy/docker-compose.yml /tmp/qq-farm-bot-release/
     cp deploy/.env.example /tmp/qq-farm-bot-release/
     cp -r deploy/init-db deploy/README.md /tmp/qq-farm-bot-release/
-    cp scripts/deploy/fresh-install.sh scripts/deploy/repair-mysql.sh scripts/deploy/update-app.sh scripts/deploy/quick-deploy.sh /tmp/qq-farm-bot-release/
+    cp scripts/deploy/fresh-install.sh scripts/deploy/repair-mysql.sh scripts/deploy/repair-deploy.sh scripts/deploy/update-app.sh scripts/deploy/quick-deploy.sh /tmp/qq-farm-bot-release/
 
     # 生成安装脚本
     cat > /tmp/qq-farm-bot-release/install.sh << 'INSTALL_EOF'
@@ -188,10 +189,11 @@ echo "✅ 安装完成！"
 echo "📌 访问地址: http://$(hostname -I | awk '{print $1}'):3080"
 echo "📌 默认密码: 见 .env 文件中的 ADMIN_PASSWORD"
 echo "📌 后续仅更新主程序: ./update-app.sh"
+echo "📌 如果部署包丢失/损坏: ./repair-deploy.sh --backup"
 echo ""
 INSTALL_EOF
     chmod +x /tmp/qq-farm-bot-release/install.sh
-    chmod +x /tmp/qq-farm-bot-release/fresh-install.sh /tmp/qq-farm-bot-release/repair-mysql.sh /tmp/qq-farm-bot-release/update-app.sh /tmp/qq-farm-bot-release/quick-deploy.sh
+    chmod +x /tmp/qq-farm-bot-release/fresh-install.sh /tmp/qq-farm-bot-release/repair-mysql.sh /tmp/qq-farm-bot-release/repair-deploy.sh /tmp/qq-farm-bot-release/update-app.sh /tmp/qq-farm-bot-release/quick-deploy.sh
 
     cd /tmp
     tar czf "${PROJECT_ROOT}/deploy/offline/qq-farm-bot-v${VERSION}-offline.tar.gz" \

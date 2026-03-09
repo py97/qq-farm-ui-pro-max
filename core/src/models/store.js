@@ -25,7 +25,10 @@ const DEFAULT_OFFLINE_REMINDER = {
     token: '',
     title: '账号下线提醒',
     msg: '账号下线',
-    offlineDeleteSec: 0,
+    offlineDeleteEnabled: false,
+    offlineDeleteSec: 1,
+    webhookCustomJsonEnabled: false,
+    webhookCustomJsonTemplate: '',
 };
 const DEFAULT_REPORT_CONFIG = {
     enabled: false,
@@ -68,6 +71,32 @@ const DEFAULT_REPORT_STATE = {
     lastDailySlot: '',
     hourlyBaseline: null,
     dailyBaseline: null,
+};
+const DEFAULT_MODE_SCOPE = {
+    zoneScope: 'same_zone_only',
+    requiresGameFriend: true,
+    fallbackBehavior: 'standalone',
+};
+const ACCOUNT_MODE_PRESETS = Object.freeze({
+    main: {
+        accountMode: 'main',
+        harvestDelay: { min: 0, max: 0 },
+    },
+    alt: {
+        accountMode: 'alt',
+        harvestDelay: { min: 180, max: 300 },
+    },
+    safe: {
+        accountMode: 'safe',
+        harvestDelay: { min: 240, max: 420 },
+    },
+});
+const ALLOWED_PLANTING_FALLBACK_STRATEGIES = ['pause', 'preferred', 'level', 'cheapest'];
+const ALLOWED_INVENTORY_PLANTING_MODES = ['disabled', 'prefer_inventory', 'inventory_only'];
+const DEFAULT_INVENTORY_PLANTING = {
+    mode: 'disabled',
+    globalKeepCount: 0,
+    reserveRules: [],
 };
 const DEFAULT_TRADE_CONFIG = {
     sell: {
@@ -126,15 +155,21 @@ const DEFAULT_ACCOUNT_CONFIG = {
         vip_gift: true,
         month_card: true,
         open_server_gift: true,
-        sell: true,
+        sell: false,
         fertilizer: 'none',
         fertilizer_60s_anti_steal: false,
         fertilizer_smart_phase: false,
         fastHarvest: false,
         landUpgradeTarget: 6,
     },
+    accountMode: 'main',
+    harvestDelay: { min: 0, max: 0 },
+    riskPromptEnabled: true,
+    modeScope: { ...DEFAULT_MODE_SCOPE },
     plantingStrategy: 'preferred',
+    plantingFallbackStrategy: 'level',
     preferredSeedId: 0,
+    inventoryPlanting: { ...DEFAULT_INVENTORY_PLANTING },
     intervals: {
         farm: 30,
         friend: 60,
@@ -172,6 +207,9 @@ const FERTILIZER_OPTIONS = new Set(['both', 'normal', 'organic', 'none']);
 let accountFallbackConfig = {
     ...DEFAULT_ACCOUNT_CONFIG,
     automation: { ...DEFAULT_ACCOUNT_CONFIG.automation },
+    harvestDelay: { ...DEFAULT_ACCOUNT_CONFIG.harvestDelay },
+    modeScope: { ...DEFAULT_ACCOUNT_CONFIG.modeScope },
+    inventoryPlanting: { ...DEFAULT_ACCOUNT_CONFIG.inventoryPlanting, reserveRules: [] },
     intervals: { ...DEFAULT_ACCOUNT_CONFIG.intervals },
     friendQuietHours: { ...DEFAULT_ACCOUNT_CONFIG.friendQuietHours },
 };
@@ -267,11 +305,14 @@ function normalizeUIConfig(input, fallback = DEFAULT_UI_CONFIG) {
 
 function normalizeOfflineReminder(input) {
     const src = (input && typeof input === 'object') ? input : {};
+    const offlineDeleteEnabled = src.offlineDeleteEnabled !== undefined
+        ? !!src.offlineDeleteEnabled
+        : !!DEFAULT_OFFLINE_REMINDER.offlineDeleteEnabled;
     let offlineDeleteSec = Number.parseInt(src.offlineDeleteSec, 10);
     if (!Number.isFinite(offlineDeleteSec)) {
         offlineDeleteSec = DEFAULT_OFFLINE_REMINDER.offlineDeleteSec;
     }
-    offlineDeleteSec = Math.max(0, offlineDeleteSec);
+    offlineDeleteSec = Math.max(1, offlineDeleteSec);
     const rawChannel = (src.channel !== undefined && src.channel !== null)
         ? String(src.channel).trim().toLowerCase()
         : '';
@@ -300,6 +341,12 @@ function normalizeOfflineReminder(input) {
     const msg = (src.msg !== undefined && src.msg !== null)
         ? String(src.msg).trim()
         : DEFAULT_OFFLINE_REMINDER.msg;
+    const webhookCustomJsonEnabled = src.webhookCustomJsonEnabled !== undefined
+        ? !!src.webhookCustomJsonEnabled
+        : !!DEFAULT_OFFLINE_REMINDER.webhookCustomJsonEnabled;
+    const webhookCustomJsonTemplate = (src.webhookCustomJsonTemplate !== undefined && src.webhookCustomJsonTemplate !== null)
+        ? String(src.webhookCustomJsonTemplate)
+        : DEFAULT_OFFLINE_REMINDER.webhookCustomJsonTemplate;
     return {
         channel,
         reloginUrlMode,
@@ -307,7 +354,10 @@ function normalizeOfflineReminder(input) {
         token,
         title,
         msg,
+        offlineDeleteEnabled,
         offlineDeleteSec,
+        webhookCustomJsonEnabled,
+        webhookCustomJsonTemplate,
     };
 }
 
@@ -394,6 +444,90 @@ function normalizeWorkflowConfig(rawWorkflow, fallbackWorkflow = DEFAULT_ACCOUNT
     };
 }
 
+function normalizePlantingFallbackStrategy(strategy, fallback = DEFAULT_ACCOUNT_CONFIG.plantingFallbackStrategy) {
+    const normalized = String(strategy || '').trim();
+    return ALLOWED_PLANTING_FALLBACK_STRATEGIES.includes(normalized) ? normalized : fallback;
+}
+
+function normalizeAccountMode(mode, fallback = DEFAULT_ACCOUNT_CONFIG.accountMode) {
+    const normalized = String(mode || '').trim().toLowerCase();
+    return ACCOUNT_MODE_PRESETS[normalized] ? normalized : fallback;
+}
+
+function getAccountModePreset(mode) {
+    return ACCOUNT_MODE_PRESETS[normalizeAccountMode(mode)] || ACCOUNT_MODE_PRESETS.main;
+}
+
+function normalizeHarvestDelay(delay, fallbackDelay = DEFAULT_ACCOUNT_CONFIG.harvestDelay, mode = DEFAULT_ACCOUNT_CONFIG.accountMode) {
+    const fallback = (fallbackDelay && typeof fallbackDelay === 'object')
+        ? fallbackDelay
+        : getAccountModePreset(mode).harvestDelay;
+    const src = (delay && typeof delay === 'object') ? delay : {};
+    let min = Math.max(0, Number.parseInt(src.min, 10));
+    let max = Math.max(0, Number.parseInt(src.max, 10));
+    if (!Number.isFinite(min)) min = Math.max(0, Number.parseInt(fallback.min, 10) || 0);
+    if (!Number.isFinite(max)) max = Math.max(0, Number.parseInt(fallback.max, 10) || 0);
+    if (min > max) [min, max] = [max, min];
+    return { min, max };
+}
+
+function normalizeModeScope(scope, fallbackScope = DEFAULT_MODE_SCOPE) {
+    const src = (scope && typeof scope === 'object') ? scope : {};
+    const fallback = (fallbackScope && typeof fallbackScope === 'object') ? fallbackScope : DEFAULT_MODE_SCOPE;
+    return {
+        zoneScope: String(src.zoneScope !== undefined ? src.zoneScope : fallback.zoneScope || DEFAULT_MODE_SCOPE.zoneScope).trim().toLowerCase() === 'all_zones'
+            ? 'all_zones'
+            : DEFAULT_MODE_SCOPE.zoneScope,
+        requiresGameFriend: src.requiresGameFriend !== undefined
+            ? !!src.requiresGameFriend
+            : (fallback.requiresGameFriend !== undefined ? !!fallback.requiresGameFriend : DEFAULT_MODE_SCOPE.requiresGameFriend),
+        fallbackBehavior: String(src.fallbackBehavior !== undefined ? src.fallbackBehavior : fallback.fallbackBehavior || DEFAULT_MODE_SCOPE.fallbackBehavior).trim().toLowerCase() === 'strict_block'
+            ? 'strict_block'
+            : DEFAULT_MODE_SCOPE.fallbackBehavior,
+    };
+}
+
+function normalizeInventoryPlanting(rawConfig, fallbackConfig = DEFAULT_INVENTORY_PLANTING) {
+    const raw = (rawConfig && typeof rawConfig === 'object') ? rawConfig : {};
+    const fallback = (fallbackConfig && typeof fallbackConfig === 'object') ? fallbackConfig : DEFAULT_INVENTORY_PLANTING;
+    const reserveRulesSource = Array.isArray(raw.reserveRules)
+        ? raw.reserveRules
+        : (Array.isArray(fallback.reserveRules) ? fallback.reserveRules : []);
+    const seen = new Set();
+    const reserveRules = reserveRulesSource
+        .map((rule) => ({
+            seedId: Math.max(0, Number.parseInt(rule && rule.seedId, 10) || 0),
+            keepCount: Math.max(0, Number.parseInt(rule && rule.keepCount, 10) || 0),
+        }))
+        .filter((rule) => {
+            if (rule.seedId <= 0 || seen.has(rule.seedId)) return false;
+            seen.add(rule.seedId);
+            return true;
+        });
+
+    const fallbackMode = ALLOWED_INVENTORY_PLANTING_MODES.includes(String(fallback.mode || ''))
+        ? String(fallback.mode)
+        : DEFAULT_INVENTORY_PLANTING.mode;
+    return {
+        mode: ALLOWED_INVENTORY_PLANTING_MODES.includes(String(raw.mode || ''))
+            ? String(raw.mode)
+            : fallbackMode,
+        globalKeepCount: Math.max(0, Number.parseInt(
+            raw.globalKeepCount !== undefined ? raw.globalKeepCount : fallback.globalKeepCount,
+            10,
+        ) || 0),
+        reserveRules,
+    };
+}
+
+function resolveAccountZone(platform) {
+    const normalized = String(platform || '').trim().toLowerCase();
+    if (normalized === 'qq' || normalized.startsWith('qq_')) return 'qq';
+    if (normalized.startsWith('wx')) return 'wx';
+    if (normalized) return normalized;
+    return 'unknown_zone';
+}
+
 function normalizeTradeConfig(rawTrade, fallbackTrade = DEFAULT_TRADE_CONFIG) {
     const raw = (rawTrade && typeof rawTrade === 'object') ? rawTrade : {};
     const fallback = (fallbackTrade && typeof fallbackTrade === 'object') ? fallbackTrade : DEFAULT_TRADE_CONFIG;
@@ -472,16 +606,25 @@ function cloneAccountConfig(base = DEFAULT_ACCOUNT_CONFIG) {
     const forceGetAll = (base.forceGetAll && typeof base.forceGetAll === 'object')
         ? { enabled: !!base.forceGetAll.enabled }
         : DEFAULT_ACCOUNT_CONFIG.forceGetAll;
+    const accountMode = normalizeAccountMode(base.accountMode, DEFAULT_ACCOUNT_CONFIG.accountMode);
+    const modeScope = normalizeModeScope(base.modeScope, DEFAULT_MODE_SCOPE);
+    const harvestDelay = normalizeHarvestDelay(base.harvestDelay, getAccountModePreset(accountMode).harvestDelay, accountMode);
     return {
         ...base,
         automation,
+        accountMode,
+        harvestDelay,
+        riskPromptEnabled: base.riskPromptEnabled !== false,
+        modeScope,
         intervals: { ...(base.intervals || DEFAULT_ACCOUNT_CONFIG.intervals) },
         friendQuietHours: { ...(base.friendQuietHours || DEFAULT_ACCOUNT_CONFIG.friendQuietHours) },
         friendBlacklist: rawBlacklist.map(Number).filter(n => Number.isFinite(n) && n > 0),
         plantingStrategy: ALLOWED_PLANTING_STRATEGIES.includes(String(base.plantingStrategy || ''))
             ? String(base.plantingStrategy)
             : DEFAULT_ACCOUNT_CONFIG.plantingStrategy,
+        plantingFallbackStrategy: normalizePlantingFallbackStrategy(base.plantingFallbackStrategy),
         preferredSeedId: Math.max(0, Number.parseInt(base.preferredSeedId, 10) || 0),
+        inventoryPlanting: normalizeInventoryPlanting(base.inventoryPlanting, DEFAULT_INVENTORY_PLANTING),
         stealFilter,
         stealFriendFilter,
         stakeoutSteal,
@@ -504,6 +647,26 @@ function resolveAccountId(accountId) {
 function normalizeAccountConfig(input, fallback = accountFallbackConfig) {
     const src = (input && typeof input === 'object') ? input : {};
     const cfg = cloneAccountConfig(fallback || DEFAULT_ACCOUNT_CONFIG);
+    const hasAccountModeUpdate = src.accountMode !== undefined;
+
+    if (hasAccountModeUpdate) {
+        cfg.accountMode = normalizeAccountMode(src.accountMode, cfg.accountMode || DEFAULT_ACCOUNT_CONFIG.accountMode);
+    }
+    cfg.harvestDelay = normalizeHarvestDelay(
+        src.harvestDelay !== undefined
+            ? src.harvestDelay
+            : (hasAccountModeUpdate ? getAccountModePreset(cfg.accountMode).harvestDelay : cfg.harvestDelay),
+        cfg.harvestDelay || getAccountModePreset(cfg.accountMode).harvestDelay,
+        cfg.accountMode,
+    );
+    if (src.riskPromptEnabled !== undefined) {
+        cfg.riskPromptEnabled = !!src.riskPromptEnabled;
+    }
+    if (src.modeScope && typeof src.modeScope === 'object') {
+        cfg.modeScope = normalizeModeScope(src.modeScope, cfg.modeScope || DEFAULT_MODE_SCOPE);
+    } else {
+        cfg.modeScope = normalizeModeScope(cfg.modeScope, DEFAULT_MODE_SCOPE);
+    }
 
     if (src.automation && typeof src.automation === 'object') {
         for (const [k, v] of Object.entries(src.automation)) {
@@ -515,9 +678,17 @@ function normalizeAccountConfig(input, fallback = accountFallbackConfig) {
     if (src.plantingStrategy && ALLOWED_PLANTING_STRATEGIES.includes(src.plantingStrategy)) {
         cfg.plantingStrategy = src.plantingStrategy;
     }
+    if (src.plantingFallbackStrategy !== undefined) {
+        cfg.plantingFallbackStrategy = normalizePlantingFallbackStrategy(src.plantingFallbackStrategy, cfg.plantingFallbackStrategy);
+    }
 
     if (src.preferredSeedId !== undefined && src.preferredSeedId !== null) {
         cfg.preferredSeedId = Math.max(0, Number.parseInt(src.preferredSeedId, 10) || 0);
+    }
+    if (src.inventoryPlanting && typeof src.inventoryPlanting === 'object') {
+        cfg.inventoryPlanting = normalizeInventoryPlanting(src.inventoryPlanting, cfg.inventoryPlanting || DEFAULT_INVENTORY_PLANTING);
+    } else {
+        cfg.inventoryPlanting = normalizeInventoryPlanting(cfg.inventoryPlanting, DEFAULT_INVENTORY_PLANTING);
     }
 
     if (src.intervals && typeof src.intervals === 'object') {
@@ -644,9 +815,16 @@ async function loadGlobalConfigFromDB() {
     try {
         const pool = getPool();
         const [rows] = await pool.query('SELECT * FROM account_configs');
+        const existingAccountConfigs = (globalConfig.accountConfigs && typeof globalConfig.accountConfigs === 'object')
+            ? { ...globalConfig.accountConfigs }
+            : {};
         accountFallbackConfig = normalizeAccountConfig(globalConfig.defaultAccountConfig, DEFAULT_ACCOUNT_CONFIG);
         globalConfig.defaultAccountConfig = cloneAccountConfig(accountFallbackConfig);
-        globalConfig.accountConfigs = {};
+        globalConfig.accountConfigs = Object.fromEntries(
+            Object.entries(existingAccountConfigs)
+                .map(([id, cfg]) => [String(id || '').trim(), normalizeAccountConfig(cfg, accountFallbackConfig)])
+                .filter(([id]) => id),
+        );
         globalConfig.ui = normalizeUIConfig(globalConfig.ui, DEFAULT_UI_CONFIG);
         globalConfig.offlineReminder = normalizeOfflineReminder(globalConfig.offlineReminder);
         globalConfig.timingConfig = normalizeTimingConfig(globalConfig.timingConfig, DEFAULT_TIMING_CONFIG);
@@ -676,9 +854,18 @@ async function loadGlobalConfigFromDB() {
             }
 
             globalConfig.accountConfigs[r.account_id] = normalizeAccountConfig({
+                accountMode: r.account_mode,
+                harvestDelay: {
+                    min: r.harvest_delay_min,
+                    max: r.harvest_delay_max,
+                },
                 automation,
+                riskPromptEnabled: adv.riskPromptEnabled,
+                modeScope: adv.modeScope,
                 plantingStrategy: r.planting_strategy,
+                plantingFallbackStrategy: adv.plantingFallbackStrategy,
                 preferredSeedId: r.preferred_seed_id,
+                inventoryPlanting: adv.inventoryPlanting,
                 intervals: adv.intervals || {},
                 friendQuietHours: adv.friendQuietHours || {},
                 friendBlacklist: adv.friendBlacklist || [],
@@ -843,7 +1030,11 @@ function saveGlobalConfigImmediate() {
         transaction(async (conn) => {
             for (const [id, cfg] of Object.entries(globalConfig.accountConfigs)) {
                 const advSetting = JSON.stringify({
+                    riskPromptEnabled: cfg.riskPromptEnabled !== false,
+                    modeScope: normalizeModeScope(cfg.modeScope, DEFAULT_MODE_SCOPE),
                     automation: cfg.automation || {},
+                    plantingFallbackStrategy: normalizePlantingFallbackStrategy(cfg.plantingFallbackStrategy),
+                    inventoryPlanting: normalizeInventoryPlanting(cfg.inventoryPlanting, DEFAULT_INVENTORY_PLANTING),
                     intervals: cfg.intervals || {},
                     friendQuietHours: cfg.friendQuietHours || {},
                     friendBlacklist: cfg.friendBlacklist || [],
@@ -864,15 +1055,16 @@ function saveGlobalConfigImmediate() {
                 });
                 const automationKeys = cfg.automation || {};
                 await conn.query(`
-                    INSERT INTO account_configs (account_id, planting_strategy, preferred_seed_id, 
+                    INSERT INTO account_configs (account_id, account_mode, harvest_delay_min, harvest_delay_max, planting_strategy, preferred_seed_id,
                     automation_farm, automation_farm_push, automation_land_upgrade,
                     automation_friend, automation_friend_steal, automation_friend_help,
                     automation_friend_bad, automation_task, automation_email,
                     automation_free_gifts, automation_share_reward, automation_vip_gift,
                     automation_month_card, automation_sell, automation_fertilizer,
                     advanced_settings) 
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ON DUPLICATE KEY UPDATE 
+                    account_mode=VALUES(account_mode), harvest_delay_min=VALUES(harvest_delay_min), harvest_delay_max=VALUES(harvest_delay_max),
                     planting_strategy=VALUES(planting_strategy), preferred_seed_id=VALUES(preferred_seed_id),
                     automation_farm=VALUES(automation_farm), automation_farm_push=VALUES(automation_farm_push), automation_land_upgrade=VALUES(automation_land_upgrade),
                     automation_friend=VALUES(automation_friend), automation_friend_steal=VALUES(automation_friend_steal), automation_friend_help=VALUES(automation_friend_help),
@@ -881,7 +1073,12 @@ function saveGlobalConfigImmediate() {
                     automation_month_card=VALUES(automation_month_card), automation_sell=VALUES(automation_sell), automation_fertilizer=VALUES(automation_fertilizer),
                     advanced_settings=VALUES(advanced_settings)
                 `, [
-                    id, cfg.plantingStrategy || 'preferred', cfg.preferredSeedId || 0,
+                    id,
+                    cfg.accountMode || DEFAULT_ACCOUNT_CONFIG.accountMode,
+                    cfg.harvestDelay?.min || 0,
+                    cfg.harvestDelay?.max || 0,
+                    cfg.plantingStrategy || 'preferred',
+                    cfg.preferredSeedId || 0,
                     automationKeys.farm === false ? 0 : 1, automationKeys.farm_push === false ? 0 : 1, automationKeys.land_upgrade === false ? 0 : 1,
                     automationKeys.friend === false ? 0 : 1, automationKeys.friend_steal === false ? 0 : 1, automationKeys.friend_help === false ? 0 : 1,
                     automationKeys.friend_bad === true ? 1 : 0, automationKeys.task === false ? 0 : 1, automationKeys.email === false ? 0 : 1,
@@ -919,9 +1116,15 @@ function getAutomation(accountId) {
 function getConfigSnapshot(accountId) {
     const cfg = getAccountConfigSnapshot(accountId);
     return {
+        accountMode: cfg.accountMode,
+        harvestDelay: { ...(cfg.harvestDelay || DEFAULT_ACCOUNT_CONFIG.harvestDelay) },
+        riskPromptEnabled: cfg.riskPromptEnabled !== false,
+        modeScope: normalizeModeScope(cfg.modeScope, DEFAULT_MODE_SCOPE),
         automation: { ...cfg.automation },
         plantingStrategy: cfg.plantingStrategy,
+        plantingFallbackStrategy: cfg.plantingFallbackStrategy,
         preferredSeedId: cfg.preferredSeedId,
+        inventoryPlanting: normalizeInventoryPlanting(cfg.inventoryPlanting, DEFAULT_INVENTORY_PLANTING),
         intervals: { ...cfg.intervals },
         friendQuietHours: { ...cfg.friendQuietHours },
         friendBlacklist: [...(cfg.friendBlacklist || [])],
@@ -939,6 +1142,26 @@ function applyConfigSnapshot(snapshot, options = {}) {
 
     const current = getAccountConfigSnapshot(accountId);
     const next = normalizeAccountConfig(current, accountFallbackConfig);
+    const hasAccountModeUpdate = cfg.accountMode !== undefined;
+
+    if (hasAccountModeUpdate) {
+        next.accountMode = normalizeAccountMode(cfg.accountMode, next.accountMode);
+        if (cfg.harvestDelay === undefined) {
+            next.harvestDelay = normalizeHarvestDelay(getAccountModePreset(next.accountMode).harvestDelay, getAccountModePreset(next.accountMode).harvestDelay, next.accountMode);
+        }
+    }
+
+    if (cfg.harvestDelay && typeof cfg.harvestDelay === 'object') {
+        next.harvestDelay = normalizeHarvestDelay(cfg.harvestDelay, next.harvestDelay || getAccountModePreset(next.accountMode).harvestDelay, next.accountMode);
+    }
+
+    if (cfg.riskPromptEnabled !== undefined) {
+        next.riskPromptEnabled = !!cfg.riskPromptEnabled;
+    }
+
+    if (cfg.modeScope && typeof cfg.modeScope === 'object') {
+        next.modeScope = normalizeModeScope(cfg.modeScope, next.modeScope || DEFAULT_MODE_SCOPE);
+    }
 
     if (cfg.automation && typeof cfg.automation === 'object') {
         for (const [k, v] of Object.entries(cfg.automation)) {
@@ -950,9 +1173,15 @@ function applyConfigSnapshot(snapshot, options = {}) {
     if (cfg.plantingStrategy && ALLOWED_PLANTING_STRATEGIES.includes(cfg.plantingStrategy)) {
         next.plantingStrategy = cfg.plantingStrategy;
     }
+    if (cfg.plantingFallbackStrategy !== undefined) {
+        next.plantingFallbackStrategy = normalizePlantingFallbackStrategy(cfg.plantingFallbackStrategy, next.plantingFallbackStrategy);
+    }
 
     if (cfg.preferredSeedId !== undefined && cfg.preferredSeedId !== null) {
         next.preferredSeedId = Math.max(0, Number.parseInt(cfg.preferredSeedId, 10) || 0);
+    }
+    if (cfg.inventoryPlanting && typeof cfg.inventoryPlanting === 'object') {
+        next.inventoryPlanting = normalizeInventoryPlanting(cfg.inventoryPlanting, next.inventoryPlanting || DEFAULT_INVENTORY_PLANTING);
     }
 
     if (cfg.intervals && typeof cfg.intervals === 'object') {
@@ -1046,6 +1275,43 @@ function getPreferredSeed(accountId) {
 
 function getPlantingStrategy(accountId) {
     return getAccountConfigSnapshot(accountId).plantingStrategy;
+}
+
+function getInventoryPlanting(accountId) {
+    return normalizeInventoryPlanting(getAccountConfigSnapshot(accountId).inventoryPlanting, DEFAULT_INVENTORY_PLANTING);
+}
+
+function applyAccountMode(accountId, mode) {
+    const normalizedMode = normalizeAccountMode(mode, DEFAULT_ACCOUNT_CONFIG.accountMode);
+    const preset = getAccountModePreset(normalizedMode);
+    return applyConfigSnapshot({
+        accountMode: normalizedMode,
+        harvestDelay: preset.harvestDelay,
+    }, { accountId });
+}
+
+async function ensureMainAccountUnique(accountId, ownerUsername) {
+    const normalizedOwner = String(ownerUsername || '').trim();
+    const resolvedId = resolveAccountId(accountId);
+    if (!resolvedId || !normalizedOwner) return [];
+    const accountsData = getAccounts();
+    const accounts = Array.isArray(accountsData.accounts) ? accountsData.accounts : [];
+    const targetAccount = accounts.find(item => String(item && item.id || '').trim() === resolvedId);
+    if (!targetAccount) return [];
+    const targetZone = resolveAccountZone(targetAccount.platform);
+    const downgraded = [];
+    for (const account of accounts) {
+        if (!account || typeof account !== 'object') continue;
+        const peerId = String(account.id || '').trim();
+        if (!peerId || peerId === resolvedId) continue;
+        if (String(account.username || '').trim() !== normalizedOwner) continue;
+        if (resolveAccountZone(account.platform) !== targetZone) continue;
+        const snapshot = getConfigSnapshot(peerId);
+        if (normalizeAccountMode(snapshot.accountMode, DEFAULT_ACCOUNT_CONFIG.accountMode) !== 'main') continue;
+        applyAccountMode(peerId, 'alt');
+        downgraded.push({ ...account, id: peerId });
+    }
+    return downgraded;
 }
 
 function getIntervals(accountId) {
@@ -1696,11 +1962,14 @@ async function loadAllFromDB() {
     await loadGlobalConfigFromDB();
 }
 
+
 module.exports = {
     loadAllFromDB,
     DEFAULT_ACCOUNT_CONFIG,
     DEFAULT_TIMING_CONFIG,
     DEFAULT_TRADE_CONFIG,
+    DEFAULT_INVENTORY_PLANTING,
+    ACCOUNT_MODE_PRESETS,
     getAccountConfigSnapshot,
     setAccountConfigSnapshot,
     removeAccountConfig,
@@ -1711,6 +1980,7 @@ module.exports = {
     isAutomationOn,
     getPlantingStrategy,
     getPreferredSeed,
+    getInventoryPlanting,
     getIntervals,
     getFriendQuietHours,
     getTradeConfig,
@@ -1740,6 +2010,9 @@ module.exports = {
     getSuspendUntil,
     recordSuspendUntil,
     ensureAccountConfig,
+    applyAccountMode,
+    ensureMainAccountUnique,
+    resolveAccountZone,
     addOrUpdateAccount,
     deleteAccount,
     getAdminPasswordHash,

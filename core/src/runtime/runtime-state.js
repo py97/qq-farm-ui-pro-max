@@ -135,6 +135,13 @@ function createRuntimeState(options) {
             expProgress: { current: 0, needed: 0, level: 0 },
             configRevision,
             accountId: String(accountId || ''),
+            accountMode: 'main',
+            effectiveMode: 'main',
+            modeScope: {},
+            accountZone: 'unknown_zone',
+            collaborationEnabled: false,
+            degradeReason: '',
+            degradeReasonLabel: '',
         };
     }
 

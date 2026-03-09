@@ -1,0 +1,235 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>远端注册封禁与账号持久化修复报告</title>
+  <style>
+    :root {
+      --bg: #0b1220;
+      --panel: #111b2e;
+      --panel-2: #16233c;
+      --text: #e8eefc;
+      --muted: #9bb0d3;
+      --ok: #39d98a;
+      --warn: #ffb648;
+      --bad: #ff6b6b;
+      --line: #243556;
+      --accent: #5aa7ff;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font: 15px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+      background: linear-gradient(180deg, #08111e 0%, #0b1220 100%);
+      color: var(--text);
+    }
+    .wrap {
+      width: min(1100px, calc(100% - 32px));
+      margin: 32px auto 56px;
+    }
+    .hero, .card {
+      background: rgba(17, 27, 46, 0.92);
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      box-shadow: 0 18px 50px rgba(0, 0, 0, 0.28);
+    }
+    .hero {
+      padding: 28px 30px;
+      margin-bottom: 20px;
+      background:
+        radial-gradient(circle at top right, rgba(90, 167, 255, 0.18), transparent 28%),
+        rgba(17, 27, 46, 0.94);
+    }
+    h1, h2 { margin: 0 0 12px; }
+    h1 { font-size: 30px; }
+    h2 { font-size: 20px; }
+    p { margin: 0 0 10px; color: var(--muted); }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 16px;
+    }
+    .card { padding: 22px 24px; margin-top: 16px; }
+    .pill {
+      display: inline-block;
+      padding: 4px 10px;
+      border-radius: 999px;
+      margin-right: 8px;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: .02em;
+    }
+    .ok { background: rgba(57, 217, 138, .14); color: var(--ok); }
+    .warn { background: rgba(255, 182, 72, .14); color: var(--warn); }
+    .bad { background: rgba(255, 107, 107, .14); color: var(--bad); }
+    ul { margin: 10px 0 0; padding-left: 20px; }
+    li { margin: 6px 0; color: var(--text); }
+    code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      color: #cde0ff;
+      background: rgba(255,255,255,.05);
+      border: 1px solid rgba(255,255,255,.08);
+      border-radius: 8px;
+      padding: 2px 6px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 10px;
+    }
+    th, td {
+      text-align: left;
+      padding: 12px 10px;
+      border-bottom: 1px solid var(--line);
+      vertical-align: top;
+    }
+    th { color: #cfe0ff; font-size: 13px; }
+    td { color: var(--muted); }
+    .small { font-size: 13px; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <section class="hero">
+      <h1>远端注册封禁与账号持久化修复报告</h1>
+      <p>目标服务器：<code>aa.smdk000.com:42</code> / 业务入口：<code>http://10.31.0.194:3080</code></p>
+      <p>处理日期：2026-03-08</p>
+      <div style="margin-top:14px">
+        <span class="pill ok">已修复</span>
+        <span class="pill ok">已部署</span>
+        <span class="pill ok">已复测</span>
+        <span class="pill warn">有 2 条非阻塞建议</span>
+      </div>
+    </section>
+
+    <section class="grid">
+      <article class="card">
+        <h2>问题结论</h2>
+        <ul>
+          <li>远端运行的并不是最新代码，而是旧版 <code>4.5.5</code>。</li>
+          <li>“注册后立刻被封禁”来自旧逻辑把 <code>cards.enabled</code> 错当成用户封禁状态。</li>
+          <li>“扫码登录后账号列表还是空白”来自旧版账号持久化异常，账号只存在于内存，不落 MySQL。</li>
+          <li>服务器外网到 Docker Hub 与 <code>raw.githubusercontent.com</code> 不稳定，导致旧的一键更新脚本无法自愈。</li>
+        </ul>
+      </article>
+
+      <article class="card">
+        <h2>发布结论</h2>
+        <ul>
+          <li>代码已推送到 GitHub：<code>efbf7f0</code></li>
+          <li>Docker 工作流已成功：<code>run #52</code></li>
+          <li>远端主程序已切换到新镜像：<code>sha256:ac5bcec60ad6...</code></li>
+          <li>业务版本已升级为 <code>4.5.6</code></li>
+        </ul>
+      </article>
+    </section>
+
+    <section class="card">
+      <h2>处理动作</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>阶段</th>
+            <th>动作</th>
+            <th>结果</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>定位</td>
+            <td>核查远端 API、数据库、容器与部署目录</td>
+            <td>确认远端仍跑旧版，且账号数据未落库</td>
+          </tr>
+          <tr>
+            <td>修复</td>
+            <td>提交用户状态解耦、账号持久化、QQ 扫码票据、卡密天数持久化等修复</td>
+            <td>本地构建与回归通过</td>
+          </tr>
+          <tr>
+            <td>发布</td>
+            <td>推送 <code>main</code> 并等待 Docker workflow 完成</td>
+            <td>成功</td>
+          </tr>
+          <tr>
+            <td>部署</td>
+            <td>因远端出网受限，改为本地构建 <code>linux/amd64</code> 镜像，SSH 传输后远端 <code>docker load</code> 离线更新</td>
+            <td>成功</td>
+          </tr>
+          <tr>
+            <td>同步</td>
+            <td>将新版部署脚本与 <code>deploy</code> bundle 同步到远端目录</td>
+            <td>已覆盖远端旧脚本</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section class="card">
+      <h2>复测结果</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>测试项</th>
+            <th>操作</th>
+            <th>结果</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>版本检查</td>
+            <td><code>GET /api/ping</code></td>
+            <td><span class="pill ok">通过</span> 返回 <code>4.5.6</code></td>
+          </tr>
+          <tr>
+            <td>卡密天数</td>
+            <td>管理员查看 <code>/api/cards</code></td>
+            <td><span class="pill ok">通过</span> 体验卡与普通卡都返回 <code>days</code>，不再是 <code>undefined天</code></td>
+          </tr>
+          <tr>
+            <td>注册链路</td>
+            <td>新建测试卡密，注册用户 <code>reg091738</code>，再登录</td>
+            <td><span class="pill ok">通过</span> 注册成功、登录成功，不再报“账号已被封禁”</td>
+          </tr>
+          <tr>
+            <td>权限行为</td>
+            <td>测试用户访问 <code>/api/users</code></td>
+            <td><span class="pill ok">通过</span> 返回 <code>403 Forbidden</code>，说明是权限拦截而非误封禁</td>
+          </tr>
+          <tr>
+            <td>账号持久化</td>
+            <td>新增测试账号 <code>1001</code>，等待 3 秒后再次读取列表并查询 MySQL</td>
+            <td><span class="pill ok">通过</span> 账号仍在列表中，且 MySQL <code>accounts</code> 表有对应记录</td>
+          </tr>
+          <tr>
+            <td>清理验证</td>
+            <td>删除测试账号、测试用户、测试卡密</td>
+            <td><span class="pill ok">通过</span> 远端恢复干净状态，账号列表为空</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section class="card">
+      <h2>数据库迁移状态</h2>
+      <ul>
+        <li><code>users.status</code> 已存在，默认值为 <code>active</code></li>
+        <li><code>cards.days</code> 已存在，旧卡密已回填默认天数</li>
+      </ul>
+    </section>
+
+    <section class="card">
+      <h2>非阻塞建议</h2>
+      <ul>
+        <li>容器启动时有一条警告：<code>../scripts/service/ai-autostart</code> 未打包进镜像。当前不影响主业务，但建议后续统一处理 Docker 镜像中的 AI 服务脚本路径。</li>
+        <li>这台服务器对 Docker Hub 与 GitHub Raw 出网不稳定。若要让“一键部署/更新”在这台机器上始终一次通过，建议补一个“离线 bundle / 本地镜像归档”模式，或接入内网镜像仓库。</li>
+      </ul>
+    </section>
+
+    <section class="card small">
+      <h2>备注</h2>
+      <p>本次为保证线上恢复，采用了“GitHub 发布 + 本地离线镜像传输 + 远端 docker load”的组合方式。这样规避了目标服务器的外网拉取不稳定问题，同时保留了仓库与镜像版本的一致性。</p>
+    </section>
+  </div>
+</body>
+</html>

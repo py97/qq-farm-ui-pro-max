@@ -93,5 +93,7 @@ core/pnpm-lock.yaml
 web/pnpm-lock.yaml
 deploy/offline/
 services/openviking/ov.conf
+services/openviking/venv/
+services/openviking/openviking_data/
 scripts/service/logs
 scripts/service/logs/

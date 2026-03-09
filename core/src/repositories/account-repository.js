@@ -20,6 +20,7 @@ class AccountRepository {
                     a.api_error_count,
                     a.username,
                     a.avatar,
+                    a.last_login_at,
                     a.auth_data,
                     a.created_at,
                     a.updated_at,
@@ -77,6 +78,7 @@ class AccountRepository {
                     a.api_error_count,
                     a.username,
                     a.avatar,
+                    a.last_login_at,
                     a.created_at,
                     a.updated_at,
                     c.automation_farm,
@@ -129,7 +131,7 @@ class AccountRepository {
                 SELECT 
                     a.id, a.uin, a.nick, a.name, a.platform, 
                     a.running, a.status, a.api_error_count, 
-                    a.username, a.avatar, a.created_at, a.updated_at,
+                    a.username, a.avatar, a.last_login_at, a.created_at, a.updated_at,
                     c.automation_farm, c.automation_friend,
                     c.automation_friend_steal, c.automation_friend_help,
                     c.planting_strategy, c.preferred_seed_id,
@@ -210,7 +212,7 @@ class AccountRepository {
         try {
             const pool = getPool();
             const [rows] = await pool.execute(`
-                SELECT a.id, a.uin, a.nick, a.name, a.platform, a.running, a.username,
+                SELECT a.id, a.uin, a.nick, a.name, a.platform, a.running, a.username, a.last_login_at,
                        c.account_mode, c.harvest_delay_min, c.harvest_delay_max
                 FROM accounts a
                 LEFT JOIN account_configs c ON a.id = c.account_id

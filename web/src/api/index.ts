@@ -9,7 +9,7 @@ const api = axios.create({
 })
 
 api.interceptors.request.use((config) => {
-  const accountId = currentAccountId.value
+  const accountId = String(currentAccountId.value || localStorage.getItem('current_account_id') || '').trim()
   if (accountId) {
     config.headers['x-account-id'] = accountId
   }

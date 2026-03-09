@@ -53,6 +53,34 @@ async function sendPushooMessage(payload = {}) {
     const rawToken = String(payload.token || '').trim();
     const token = channel === 'webhook' ? rawToken : assertRequiredText('token', rawToken);
 
+    if (channel === 'webhook' && payload.webhookBody && typeof payload.webhookBody === 'object') {
+        const url = assertRequiredText('endpoint', endpoint);
+        const headers = { 'content-type': 'application/json' };
+        if (token) {
+            headers.authorization = `Bearer ${token}`;
+            headers['x-token'] = token;
+        }
+        const response = await fetch(url, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify(payload.webhookBody),
+        });
+        let rawBody = '';
+        try {
+            rawBody = await response.text();
+        } catch { }
+        return {
+            ok: response.ok,
+            code: String(response.status || (response.ok ? 'ok' : 'error')),
+            msg: response.ok ? 'ok' : `http_${response.status}`,
+            raw: {
+                status: response.status,
+                statusText: response.statusText,
+                body: rawBody,
+            },
+        };
+    }
+
     const options = {};
     if (channel === 'webhook') {
         const url = assertRequiredText('endpoint', endpoint);

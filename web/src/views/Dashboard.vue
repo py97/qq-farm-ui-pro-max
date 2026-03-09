@@ -73,6 +73,9 @@ const events = [
   { label: '施加化肥', value: 'fertilize' },
   { label: '土地推送', value: 'lands_notify' },
   { label: '选择种子', value: 'seed_pick' },
+  { label: '库存消耗', value: 'seed_inventory_use' },
+  { label: '预算优化', value: 'seed_budget_optimize' },
+  { label: '预算压缩', value: 'seed_budget_limit' },
   { label: '购买种子', value: 'seed_buy' },
   { label: '购买化肥', value: 'fertilizer_buy' },
   { label: '开启礼包', value: 'fertilizer_gift_open' },
@@ -90,6 +93,8 @@ const events = [
   { label: '土地解锁', value: 'unlock_land' },
   { label: '好友巡查', value: 'friend_cycle' },
   { label: '访问好友', value: 'visit_friend' },
+  { label: '访客行为', value: 'visitor' },
+  { label: '多季补肥', value: 'fertilize_smart_phase' },
 ]
 
 const eventLabelMap: Record<string, string> = Object.fromEntries(
@@ -98,6 +103,123 @@ const eventLabelMap: Record<string, string> = Object.fromEntries(
 
 function getEventLabel(event: string) {
   return eventLabelMap[event] || event
+}
+
+type LogDetailTone = 'blue' | 'emerald' | 'amber' | 'violet' | 'slate'
+
+interface LogDetailChip {
+  key: string
+  label: string
+  value: string
+  tone: LogDetailTone
+}
+
+const inventoryModeLabelMap: Record<string, string> = {
+  disabled: '商店购买',
+  prefer_inventory: '优先库存',
+  inventory_only: '仅用库存',
+}
+
+function getInventoryModeLabel(mode: unknown) {
+  const raw = String(mode || '').trim()
+  return inventoryModeLabelMap[raw] || (raw || '未设置')
+}
+
+function getLogDetailChipClass(tone: LogDetailTone) {
+  if (tone === 'blue')
+    return 'border-blue-200/70 bg-blue-50/70 text-blue-700 dark:border-blue-800/60 dark:bg-blue-900/25 dark:text-blue-300'
+  if (tone === 'emerald')
+    return 'border-emerald-200/70 bg-emerald-50/70 text-emerald-700 dark:border-emerald-800/60 dark:bg-emerald-900/25 dark:text-emerald-300'
+  if (tone === 'amber')
+    return 'border-amber-200/70 bg-amber-50/70 text-amber-700 dark:border-amber-800/60 dark:bg-amber-900/25 dark:text-amber-300'
+  if (tone === 'violet')
+    return 'border-violet-200/70 bg-violet-50/70 text-violet-700 dark:border-violet-800/60 dark:bg-violet-900/25 dark:text-violet-300'
+  return 'border-gray-200/70 bg-gray-50/70 text-gray-700 dark:border-gray-700/60 dark:bg-gray-800/30 dark:text-gray-300'
+}
+
+function toSafeLogCount(value: unknown) {
+  const num = Number(value)
+  if (!Number.isFinite(num))
+    return 0
+  return Math.max(0, Math.trunc(num))
+}
+
+function buildLogDetailChip(key: string, label: string, value: string, tone: LogDetailTone): LogDetailChip {
+  return { key, label, value, tone }
+}
+
+function getPlantingLogDetailChips(log: any): LogDetailChip[] {
+  const meta = log?.meta && typeof log.meta === 'object' ? log.meta : {}
+  const event = String(meta.event || '')
+  if (!['seed_pick', 'seed_inventory_use', 'seed_budget_limit', 'seed_budget_optimize'].includes(event))
+    return []
+
+  const inventoryMode = String(meta.inventoryMode || '').trim()
+  const hasInventoryTotalCount = meta.inventoryTotalCount !== undefined && meta.inventoryTotalCount !== null && meta.inventoryTotalCount !== ''
+  const hasInventoryReservedCount = meta.inventoryReservedCount !== undefined && meta.inventoryReservedCount !== null && meta.inventoryReservedCount !== ''
+  const hasInventoryUsableCount = meta.inventoryUsableCount !== undefined && meta.inventoryUsableCount !== null && meta.inventoryUsableCount !== ''
+  const hasInventoryUseCount = meta.inventoryUseCount !== undefined && meta.inventoryUseCount !== null && meta.inventoryUseCount !== ''
+  const hasBuyCount = meta.buyCount !== undefined && meta.buyCount !== null && meta.buyCount !== ''
+  const hasLimitedCount = meta.count !== undefined && meta.count !== null && meta.count !== ''
+  const hasPlannedCount = meta.plannedCount !== undefined && meta.plannedCount !== null && meta.plannedCount !== ''
+  const hasBasePlantedCount = (meta.basePlantedCount !== undefined && meta.basePlantedCount !== null && meta.basePlantedCount !== '')
+    || (meta.budgetBasePlantedCount !== undefined && meta.budgetBasePlantedCount !== null && meta.budgetBasePlantedCount !== '')
+
+  const inventoryTotalCount = toSafeLogCount(meta.inventoryTotalCount)
+  const inventoryReservedCount = toSafeLogCount(meta.inventoryReservedCount)
+  const inventoryUsableCount = toSafeLogCount(meta.inventoryUsableCount)
+  const inventoryUseCount = toSafeLogCount(meta.inventoryUseCount)
+  const buyCount = toSafeLogCount(meta.buyCount)
+  const limitedCount = toSafeLogCount(meta.count)
+  const plannedCount = toSafeLogCount(meta.plannedCount)
+  const basePlantedCount = toSafeLogCount(meta.basePlantedCount || meta.budgetBasePlantedCount)
+  const chips: LogDetailChip[] = []
+
+  if (inventoryMode) {
+    chips.push(buildLogDetailChip('mode', '模式', getInventoryModeLabel(inventoryMode), 'blue'))
+  }
+
+  if (event === 'seed_pick' || event === 'seed_inventory_use') {
+    if (inventoryMode !== 'disabled' || hasInventoryTotalCount || hasInventoryReservedCount || hasInventoryUsableCount) {
+      if (hasInventoryTotalCount)
+        chips.push(buildLogDetailChip('inventory-total', '库存', String(inventoryTotalCount), 'emerald'))
+      if (hasInventoryReservedCount)
+        chips.push(buildLogDetailChip('inventory-reserved', '保留', String(inventoryReservedCount), 'amber'))
+      if (hasInventoryUsableCount)
+        chips.push(buildLogDetailChip('inventory-usable', '可用', String(inventoryUsableCount), 'slate'))
+    }
+
+    if (hasInventoryUseCount && (inventoryUseCount > 0 || event === 'seed_inventory_use')) {
+      chips.push(buildLogDetailChip('inventory-use', '实耗', String(inventoryUseCount), 'emerald'))
+    }
+
+    if (event === 'seed_pick') {
+      if (hasPlannedCount && plannedCount > 0) {
+        chips.push(buildLogDetailChip('planned', '计划', String(plannedCount), 'slate'))
+      }
+      if (hasBuyCount && (buyCount > 0 || inventoryMode === 'disabled')) {
+        chips.push(buildLogDetailChip('buy', '补买', String(buyCount), 'violet'))
+      }
+      if (meta.budgetOptimized) {
+        chips.push(buildLogDetailChip('budget-optimized', '预算', '已优化', 'amber'))
+      }
+    }
+  }
+
+  if (event === 'seed_budget_limit' && hasLimitedCount && limitedCount > 0) {
+    chips.push(buildLogDetailChip('budget-limit', '本轮', String(limitedCount), 'amber'))
+  }
+
+  if (event === 'seed_budget_optimize') {
+    if (hasBasePlantedCount && basePlantedCount > 0) {
+      chips.push(buildLogDetailChip('budget-base', '原方案', String(basePlantedCount), 'slate'))
+    }
+    if (hasPlannedCount && plannedCount > 0) {
+      chips.push(buildLogDetailChip('budget-planned', '优化后', String(plannedCount), 'amber'))
+    }
+  }
+
+  return chips
 }
 
 const logs = [
@@ -1208,11 +1330,24 @@ async function handleDashboardTrialRenew() {
             <div v-if="!allLogs.length" class="glass-text-muted py-8 text-center">
               暂无日志
             </div>
-            <div v-for="log in allLogs" :key="log.ts + log.msg" class="mb-1 break-all">
-              <span class="mr-1.5 select-none opacity-60">[{{ formatLogTime(log.time) }}]</span>
-              <span class="mr-1.5 rounded px-1 py-0.5 text-xs font-bold" :class="getLogTagClass(log.tag)">{{ log.tag }}</span>
-              <span v-if="log.meta?.event" class="mr-1.5 rounded bg-blue-50/50 px-1 py-0.5 text-xs text-blue-600 dark:bg-blue-900/30 dark:text-blue-300">{{ getEventLabel(log.meta.event) }}</span>
-              <span :class="getLogMsgClass(log.tag)" class="glass-text-main opacity-90">{{ log.msg }}</span>
+            <div v-for="log in allLogs" :key="log.ts + log.msg" class="mb-2 break-all">
+              <div>
+                <span class="mr-1.5 select-none opacity-60">[{{ formatLogTime(log.time) }}]</span>
+                <span class="mr-1.5 rounded px-1 py-0.5 text-xs font-bold" :class="getLogTagClass(log.tag)">{{ log.tag }}</span>
+                <span v-if="log.meta?.event" class="mr-1.5 rounded bg-blue-50/50 px-1 py-0.5 text-xs text-blue-600 dark:bg-blue-900/30 dark:text-blue-300">{{ getEventLabel(log.meta.event) }}</span>
+                <span :class="getLogMsgClass(log.tag)" class="glass-text-main opacity-90">{{ log.msg }}</span>
+              </div>
+              <div v-if="getPlantingLogDetailChips(log).length" class="mt-1.5 flex flex-wrap gap-1.5 pl-14">
+                <span
+                  v-for="chip in getPlantingLogDetailChips(log)"
+                  :key="`${log.ts}-${chip.key}`"
+                  class="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] leading-5"
+                  :class="getLogDetailChipClass(chip.tone)"
+                >
+                  <span class="opacity-70">{{ chip.label }}</span>
+                  <span class="font-semibold">{{ chip.value }}</span>
+                </span>
+              </div>
             </div>
           </div>
         </div>

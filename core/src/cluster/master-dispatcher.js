@@ -2,6 +2,32 @@ const { createModuleLogger } = require('../services/logger');
 const masterLogger = createModuleLogger('master-dispatcher');
 const store = require('../models/store');
 
+function syncAccountRuntimeSnapshot(accountId, status, extra = {}) {
+    const id = String(accountId || '').trim();
+    if (!id || typeof store.addOrUpdateAccount !== 'function') return;
+
+    const panelStatus = (status && typeof status === 'object') ? status : {};
+    const liveStatus = (panelStatus.status && typeof panelStatus.status === 'object') ? panelStatus.status : {};
+    const connected = !!(panelStatus.connection && panelStatus.connection.connected);
+
+    try {
+        store.addOrUpdateAccount({
+            id,
+            running: extra.running !== undefined ? !!extra.running : true,
+            connected,
+            wsError: extra.wsError !== undefined ? extra.wsError : (panelStatus.wsError || null),
+            nick: liveStatus.name || '',
+            level: Number(liveStatus.level) || 0,
+            gold: Number(liveStatus.gold) || 0,
+            exp: Number(liveStatus.exp) || 0,
+            coupon: Number(liveStatus.coupon) || 0,
+            uptime: Number(panelStatus.uptime) || 0,
+        });
+    } catch (error) {
+        masterLogger.warn(`[Master] 写回账号运行时快照失败: ${id} -> ${error.message}`);
+    }
+}
+
 class MasterDispatcher {
     constructor(io) {
         this.io = io;
@@ -52,7 +78,22 @@ class MasterDispatcher {
 
             socket.on('disconnect', async () => {
                 if (this.workers.has(socket.id)) {
-                    masterLogger.warn(`[Master] Worker 节点掉线: ${this.workers.get(socket.id).nodeId}`);
+                    const workerBox = this.workers.get(socket.id);
+                    masterLogger.warn(`[Master] Worker 节点掉线: ${workerBox.nodeId}`);
+                    for (const acc of (workerBox.assigned || [])) {
+                        syncAccountRuntimeSnapshot(acc && acc.id, {
+                            connection: { connected: false },
+                            status: {
+                                name: acc && (acc.nick || acc.name || ''),
+                                level: acc && acc.level || 0,
+                                gold: acc && acc.gold || 0,
+                                exp: acc && acc.exp || 0,
+                                coupon: acc && acc.coupon || 0,
+                            },
+                            uptime: acc && acc.uptime || 0,
+                            wsError: { message: `Worker 节点 ${workerBox.nodeId} 已断开` },
+                        }, { running: !!(acc && acc.running), wsError: { message: `Worker 节点 ${workerBox.nodeId} 已断开` } });
+                    }
                     this.workers.delete(socket.id);
                     // 重新分配孤儿任务
                     await this.rebalance();
@@ -65,6 +106,7 @@ class MasterDispatcher {
                 // 借用 admin.js 原始机制 (此时 admin.js 中应保留 status 的中转订阅路由)
                 const { accountId, status } = payload || {};
                 if (accountId) {
+                    syncAccountRuntimeSnapshot(accountId, status);
                     this.io.to(`account:${accountId}`).emit('status:update', { accountId, status });
                     this.io.to('account:all').emit('status:update', { accountId, status });
                 }

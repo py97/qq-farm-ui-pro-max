@@ -3,18 +3,47 @@
  * 用于与 OpenViking Python 服务通信的 Node.js 客户端
  */
 
-const axios = require('axios');
-
 class OpenVikingClient {
-  constructor(baseURL = 'http://localhost:5000') {
+  constructor(baseURL = 'http://localhost:5432') {
     this.baseURL = baseURL;
-    this.client = axios.create({
-      baseURL: this.baseURL,
-      timeout: 30000,
-      headers: {
-        'Content-Type': 'application/json'
+    this.timeoutMs = 30000;
+  }
+
+  async request(method, pathname, options = {}) {
+    const { params, body } = options;
+    const url = new URL(pathname, this.baseURL);
+    if (params && typeof params === 'object') {
+      for (const [key, value] of Object.entries(params)) {
+        if (value === undefined || value === null || value === '') continue;
+        url.searchParams.set(key, String(value));
       }
+    }
+
+    const response = await fetch(url, {
+      method,
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: body === undefined ? undefined : JSON.stringify(body),
+      signal: AbortSignal.timeout(this.timeoutMs),
     });
+
+    const text = await response.text();
+    let data = {};
+    if (text) {
+      try {
+        data = JSON.parse(text);
+      } catch {
+        data = { raw: text };
+      }
+    }
+
+    if (!response.ok) {
+      const errorMessage = data.error || data.message || `${response.status} ${response.statusText}`;
+      throw new Error(errorMessage);
+    }
+
+    return data;
   }
 
   /**
@@ -22,8 +51,7 @@ class OpenVikingClient {
    */
   async healthCheck() {
     try {
-      const response = await this.client.get('/health');
-      return response.data;
+      return await this.request('GET', '/health');
     } catch (error) {
       throw new Error(`健康检查失败：${error.message}`);
     }
@@ -36,11 +64,12 @@ class OpenVikingClient {
    */
   async addResource(path, name = 'default') {
     try {
-      const response = await this.client.post('/api/resource/add', {
-        path,
-        name
+      return await this.request('POST', '/api/resource/add', {
+        body: {
+          path,
+          name,
+        },
       });
-      return response.data;
     } catch (error) {
       throw new Error(`添加资源失败：${error.message}`);
     }
@@ -52,10 +81,9 @@ class OpenVikingClient {
    */
   async listResources(uri = 'viking://resources/') {
     try {
-      const response = await this.client.get('/api/resource/list', {
-        params: { uri }
+      return await this.request('GET', '/api/resource/list', {
+        params: { uri },
       });
-      return response.data;
     } catch (error) {
       throw new Error(`列出资源失败：${error.message}`);
     }
@@ -68,11 +96,12 @@ class OpenVikingClient {
    */
   async searchResource(query, targetUri = 'viking://resources/') {
     try {
-      const response = await this.client.post('/api/resource/search', {
-        query,
-        target_uri: targetUri
+      return await this.request('POST', '/api/resource/search', {
+        body: {
+          query,
+          target_uri: targetUri,
+        },
       });
-      return response.data;
     } catch (error) {
       throw new Error(`搜索资源失败：${error.message}`);
     }
@@ -84,10 +113,9 @@ class OpenVikingClient {
    */
   async readResource(uri) {
     try {
-      const response = await this.client.post('/api/resource/read', {
-        uri
+      return await this.request('POST', '/api/resource/read', {
+        body: { uri },
       });
-      return response.data;
     } catch (error) {
       throw new Error(`读取资源失败：${error.message}`);
     }
@@ -99,10 +127,9 @@ class OpenVikingClient {
    */
   async getAbstract(uri) {
     try {
-      const response = await this.client.post('/api/resource/abstract', {
-        uri
+      return await this.request('POST', '/api/resource/abstract', {
+        body: { uri },
       });
-      return response.data;
     } catch (error) {
       throw new Error(`获取摘要失败：${error.message}`);
     }
@@ -114,10 +141,9 @@ class OpenVikingClient {
    */
   async getOverview(uri) {
     try {
-      const response = await this.client.post('/api/resource/overview', {
-        uri
+      return await this.request('POST', '/api/resource/overview', {
+        body: { uri },
       });
-      return response.data;
     } catch (error) {
       throw new Error(`获取概览失败：${error.message}`);
     }
@@ -130,11 +156,12 @@ class OpenVikingClient {
    */
   async addMemory(content, category = 'general') {
     try {
-      const response = await this.client.post('/api/memory/add', {
-        content,
-        category
+      return await this.request('POST', '/api/memory/add', {
+        body: {
+          content,
+          category,
+        },
       });
-      return response.data;
     } catch (error) {
       throw new Error(`添加记忆失败：${error.message}`);
     }
@@ -146,10 +173,9 @@ class OpenVikingClient {
    */
   async listMemories(category = '') {
     try {
-      const response = await this.client.get('/api/memory/list', {
-        params: { category }
+      return await this.request('GET', '/api/memory/list', {
+        params: { category },
       });
-      return response.data;
     } catch (error) {
       throw new Error(`列出记忆失败：${error.message}`);
     }
@@ -163,12 +189,13 @@ class OpenVikingClient {
    */
   async getContext(query, includeMemories = true, includeResources = true) {
     try {
-      const response = await this.client.post('/api/context/get', {
-        query,
-        include_memories: includeMemories,
-        include_resources: includeResources
+      return await this.request('POST', '/api/context/get', {
+        body: {
+          query,
+          include_memories: includeMemories,
+          include_resources: includeResources,
+        },
       });
-      return response.data;
     } catch (error) {
       throw new Error(`获取上下文失败：${error.message}`);
     }
@@ -179,8 +206,7 @@ class OpenVikingClient {
    */
   async clearContext() {
     try {
-      const response = await this.client.post('/api/context/clear');
-      return response.data;
+      return await this.request('POST', '/api/context/clear');
     } catch (error) {
       throw new Error(`清除上下文失败：${error.message}`);
     }
@@ -191,8 +217,7 @@ class OpenVikingClient {
    */
   async shutdown() {
     try {
-      const response = await this.client.post('/shutdown');
-      return response.data;
+      return await this.request('POST', '/shutdown');
     } catch (error) {
       throw new Error(`关闭服务失败：${error.message}`);
     }

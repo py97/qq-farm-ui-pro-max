@@ -218,14 +218,255 @@
 - `node --check core/src/services/push.js`
 - `node --check core/src/services/report-service.js`
 - `node --check core/src/config-validator.js`
-- `pnpm test:ui-assets`
-- `pnpm -C web check:ui-appearance`
-- `pnpm -C web exec vue-tsc --noEmit`
-- `pnpm -C web build`
-- `pnpm -C core build:release`
 
-### 11.3 当前仍建议关注
+## 12. 二次复查续记（2026-03-09）
+
+### 12.1 本轮纳入记录的新增调整
+
+- 部署脚本已补齐“显式传入 `ADMIN_PASSWORD` 即同步数据库 admin 哈希”的落库动作，不再只修改 `.env`。
+- `update-app.sh` 已补齐从当前 shell 环境回写 `ADMIN_PASSWORD / WEB_PORT` 等变量到部署目录 `.env` 的逻辑，修复更新场景下参数被忽略的问题。
+- 账号模式相关元信息已进入运行态账号快照，账号列表和账号归属页可以直接展示 `accountMode / harvestDelay / accountZone`。
+- SMTP 邮件汇报链路已经形成“设置页表单 → 服务端归一化 → 发送器 → 推送总线”的完整闭环。
+
+### 12.2 本轮新发现的问题
+
+#### 12.2.1 重启广播仍是单次触发、失败后不补发
+
+- 代码位置：`core/src/services/report-service.js`
+- 现状：`sendRestartBroadcast()` 在首次进入时立即把 `restartBroadcastTriggered` 置为 `true`，后续即使推送失败、SMTP 暂时不可用或外部 webhook 短时超时，也不会在当前进程生命周期内再次尝试。
+- 风险：如果容器刚拉起时外部依赖还没完全就绪，服务器重启提醒会直接丢失，且不会自动补发。
+- 影响：管理员会误以为“服务没有重启广播能力”或“消息链路完全中断”，增加定位成本。
+
+#### 12.2.2 `modeScope` 目前仍未进入真实运行时决策
+
+- 代码位置：
+  - 设置说明与展示：`web/src/views/Settings.vue`
+  - 存储与接口：`core/src/models/store.js`、`core/src/controllers/admin.js`、`core/src/runtime/data-provider.js`
+  - 运行时消费：当前好友/农场逻辑主要仍只读取 `accountMode`
+- 现状：`zoneScope / requiresGameFriend / fallbackBehavior` 已进入持久化和返回值，也已经出现在设置页风险说明里。
+- 风险：界面宣称“当前账号区服”“必须互为游戏好友”“否则按独立账号降级”，但运行时没有看到对应约束真正参与好友巡查或农场调度判定。
+- 影响：用户会误以为系统已经具备“按区服 / 游戏好友自动降级”的真实行为约束，形成配置预期与运行结果不一致。
+
+#### 12.2.3 设置保存链路仍可能出现“部分成功、整体报错”
+
+- 代码位置：
+  - 前端：`web/src/stores/setting.ts`
+  - 后端：`core/src/controllers/admin.js`
+- 现状：保存设置时，前端先调用 `/api/accounts/:id/mode`，随后再调用 `/api/settings/save`。
+- 风险：如果第二步校验失败、网络超时或后端抛错，模式切换和同区其他主号的降级可能已经落库，但前端会把本次操作整体视为失败。
+- 影响：用户在界面上收到“保存失败”提示后再次重试，容易触发重复广播、重复写库和误判当前真实状态。
+
+### 12.3 当前建议
+
+- 为服务器重启提醒增加一次延迟重试，并在账号日志或内存态中保留幂等键，避免既丢消息又重复轰炸。
+- 若近期还不会把 `modeScope` 接入好友扫描和农场策略层，建议先降低设置页文案承诺，避免把“数据模型已建好”误传达成“行为已经生效”。
+- 将账号模式切换并入统一的 `/api/settings/save` 提交链路，或至少只在账号模式发生实际变化时才单独调用 `/api/accounts/:id/mode`。
+
+### 12.4 本轮验证
+
+- `node --check core/src/services/report-service.js`
+- `node --check core/src/models/store.js`
+- `node --check core/src/controllers/admin.js`
+- `node --check core/src/runtime/data-provider.js`
+- `node --check core/src/services/farm.js`
+- `bash -n scripts/deploy/fresh-install.sh`
+- `bash -n scripts/deploy/update-app.sh`
+- `node --test core/__tests__/store-account-mode.test.js core/__tests__/store-trial-config.test.js`
+
+### 12.5 延伸建议
 
 - `smtp-mailer` 采用的是手写 SMTP 协议实现，当前适合纯文本经营汇报；如果后面要支持更复杂的 HTML 模板、附件或更复杂的认证兼容，建议补集成测试并考虑是否引入成熟邮件库。
 - 好友拉取模式虽然已按账号缓存，但仍建议在 QQ / 微信混跑环境各做一次实机回归，确认探测结论不会受平台风控瞬时波动误导。
 - 背包土地类道具的 `land_ids` fallback 已补齐，但这类问题更偏协议兼容，后续最好补一条最小集成回归，而不是只依赖构建和静态检查。
+
+### 12.6 已执行修复（2026-03-09）
+
+- **设置保存链路已统一**:
+  设置页保存时已取消额外的 `/api/accounts/:id/mode` 前置调用，账号模式切换、主号唯一化和普通设置保存现在统一走 `/api/settings/save` 后端链路处理。
+- **邮件重启广播已补齐 `smtpUser` 区分**:
+  `buildReportChannelSignature()` 现已把 SMTP 登录账号纳入 `email` 渠道分组键，降低“同发件人别名、同收件箱、不同认证账号”时的配置串用风险。
+- **新增后端回归测试**:
+  已新增统一保存链路和重启广播分组逻辑的 2 条测试，避免后续重构再次引入相同回归。
+
+### 12.7 本轮后仍未完成的事项
+
+- **`modeScope` 仍未真正接入运行时**:
+  本轮修复的是“保存一致性”和“广播分组”问题，`zoneScope / requiresGameFriend / fallbackBehavior` 仍主要停留在存储与展示层，后续还需要进入好友/农场决策代码。
+
+### 12.6 补充修复与再验证（2026-03-09）
+
+#### 12.6.1 本轮新增确认与已修复项
+
+- **农场补种死循环已补闭环**:
+  复查近期补种链路时，确认 `PlantService.Plant code=1001008` 会把“已种植”地块持续打回失败日志，而旧逻辑仍会按误判空地继续“选种 -> 购种 -> 种植”。现已补三层收口：
+  - `resolveLandLifecycle()` 不再把“`plant` 存在但阶段数据缺失”的土地直接算成空地。
+  - `autoPlantEmptyLands()` 在购种前会再次拉取土地状态，只对复核后仍为空地的目标地块购买。
+  - 对明确返回“土地已种植”的地块增加短期冷却，并按真实 `plantedLandIds` 记账，不再把 `0` 成功种植也记成 `种植3`。
+- **服务器重启提醒的渠道分组签名已补正**:
+  复查 `report-service` 时发现，重启广播按渠道聚合时，`webhook` 只使用 `endpoint` 做签名，`email` 也未纳入端口/TLS/认证账号维度。若两组账号共用同一 webhook 地址但 token 不同，或同主机不同端口/加密策略，会被错误合并到同一推送批次。现已把 `token / smtpPort / smtpSecure / smtpUser` 纳入签名。
+- **设置页保存的账号模式副作用已压低**:
+  之前 `saveSettings()` 每次保存都会额外打一遍 `/api/accounts/:id/mode`，即使账号模式根本没变，也会重复触发主号唯一性检查和 worker 配置广播。现已改为仅在 `accountMode` 真实变化时才调用模式切换接口。
+- **新增 store 用例已补齐 MySQL 初始化 mock**:
+  `store.js` 新增 `isMysqlInitialized()` 依赖后，两条新增单测需要同步 mock。现已补齐，避免测试环境在模块加载阶段因缺少该导出而直接中断。
+
+#### 12.6.2 本轮影响判断
+
+- **对农场自动化的影响**:
+  当前影响主要集中在“误判空地导致反复买种子”的资源浪费和日志噪声。补丁落地后，预期日志会从连续的“购买种子 + 1001008 失败”切换为“种植前复核跳过”或“冷却期内跳过复种”。
+- **对经营汇报的影响**:
+  若不修正广播签名，服务器重启提醒在多账号、多渠道并行时存在串组风险，最坏情况下会把某一账号组的通知发到另一组 webhook/token 上，造成错误告警或漏告警。
+- **对设置保存的影响**:
+  重复触发 `/mode` 不会直接破坏配置，但会制造一次无意义的模式重放、额外的账号降级检查和 worker 广播；在多账号面板里会放大为不必要的运行态抖动。
+
+#### 12.6.3 当前仍建议关注
+
+- `smtp-mailer` 现阶段仍以文本邮件为主，建议后续补一条真实 SMTP 集成回归，至少覆盖 `465 SSL` 和 `587 STARTTLS` 两种最常见配置。
+
+#### 12.6.4 本轮补充验证
+
+- `git diff --check`
+- `node --check core/src/models/store.js`
+- `node --check core/src/services/report-service.js`
+- `node --check core/src/services/farm.js`
+- `pnpm -C web exec vue-tsc --noEmit`
+- `node --test core/__tests__/store-account-mode.test.js core/__tests__/store-trial-config.test.js`
+
+#### 12.6.5 建议项已实施落地（2026-03-09）
+
+- **服务器重启提醒已补重试与幂等批次**:
+  `sendRestartBroadcast()` 现已引入启动批次号、渠道级状态表和单任务名重试。首次发送失败后会延迟重试 1 次，且只有成功送达才会标记 `delivered`；同一批次下重复触发不会再次轰炸已成功渠道。
+- **重启提醒失败路径已避免状态卡死**:
+  发送异常、账号日志写入异常和调度回调现在已拆开处理，即使单个账号日志写失败，也不会把该渠道永久卡在 `inFlight`。
+- **AI 服务 `cwd` 已收口到项目根 / 白名单**:
+  `aiStatus` 控制器、`ai-autostart.js` 和 `ai-services-daemon.js` 现在统一走 `ai-workspace.js` 解析目录。默认仅允许当前项目根；若需多工作区，必须通过 `AI_SERVICE_ALLOWED_CWDS` 显式放行。
+- **新增回归测试已覆盖关键闭环**:
+  新增 `report-service-restart-broadcast.test.js`，验证“首发失败 -> 定时重试 -> 成功后不重复发送”；新增 `ai-workspace.test.js`，验证“默认拒绝任意目录 / 白名单允许额外工作区”。
+
+#### 12.6.6 `modeScope` 运行时已正式接入（2026-03-09）
+
+- **新增统一运行时解析器**:
+  `core/src/services/account-mode-policy.js` 现会基于当前账号配置、同 owner 对端账号、区服和最近一次好友快照，统一解析 `effectiveMode / collaborationEnabled / degradeReason`。
+- **好友巡查已消费 `effectiveMode`**:
+  好友模块不再只盯着 `accountMode`。当 `fallbackBehavior=strict_block` 且未命中“同区 + 游戏好友”条件时，会临时按更保守模式执行，主动阻断偷菜与捣乱等高风险动作。
+- **农场策略已消费 `effectiveMode`**:
+  收获延迟、防偷 60 秒抢收和秒收前置判断已统一切到运行时有效模式；同时顺手修正了两处旧偏差：
+  - `safe` 预设虽然配置了 `harvestDelay`，但旧逻辑只对 `alt` 生效，实际并不会延迟收获。
+  - `antiStealHarvest()` 旧代码误读 `config.mode`，会让模式阻断判断失真。
+- **运行态状态已补充模式结果**:
+  Worker 状态和账号列表现在已能带回 `effectiveMode / collaborationEnabled / degradeReason`，并已在账号列表显式展示。
+- **冷启动好友关系已补缓存预热**:
+  Worker 登录成功后会优先读取最近一次 Redis 好友缓存并预热运行时快照，尽量缩短 `requiresGameFriend` 在冷启动阶段的未知窗口。
+- **前端账号列表已补显式提示**:
+  账号页现在会同时显示“配置模式”“当前生效模式”“独立执行/协同命中状态”，用户不再需要翻日志判断是否已经发生降级。
+
+#### 12.6.7 本轮新增影响判断
+
+- **对默认用户配置的影响**:
+  默认 `fallbackBehavior=standalone` 下，本轮不会突然改变既有主号/小号的常规行为，主要新增的是“运行时真实判定”和“可观测的降级原因”。
+- **对显式开启 `strict_block` 的影响**:
+  这类账号在未命中同区/游戏好友条件时，现在会真实降到更保守模式；这是本轮最主要的行为变化，属于按配置兑现约束，不是兼容性回归。
+- **对风险控制的正向影响**:
+  `safe` 模式的收获延迟终于实际生效，且防偷抢收不会再因为读取错字段而越过模式约束。
+
+#### 12.6.8 当前仍建议继续优化
+
+- **好友关系判断仍依赖最近一次好友快照**:
+  冷启动、网络抖动或好友列表暂时拉取失败时，会出现 `friend_relation_unknown` 窗口；若用户同时启用了 `strict_block`，账号会先按保守模式运行，等好友快照建立后再恢复/确认。
+- **建议补冷启动预热**:
+  后续可以考虑在 Worker 启动时预读 Redis / DB 中的好友缓存，把 `requiresGameFriend` 的首轮判断从“纯实时探测”升级为“缓存预热 + 实时刷新”。
+- **建议把有效模式直接展示到前端**:
+  后端数据已经齐全，下一步最值得做的是把 `effectiveMode / degradeReason` 直接显示在账号列表或设置页，降低排查成本。
+
+#### 12.6.9 本轮补充验证
+
+- `node --check core/src/services/account-mode-policy.js`
+- `node --check core/src/services/friend/friend-scanner.js`
+- `node --check core/src/services/farm.js`
+- `node --check core/src/core/worker.js`
+- `node --check core/src/runtime/data-provider.js`
+- `node --check core/src/runtime/runtime-state.js`
+- `node --test core/__tests__/account-mode-policy.test.js`
+- `node --test core/__tests__/store-account-mode.test.js core/__tests__/data-provider-save-settings.test.js core/__tests__/report-service-restart-broadcast.test.js core/__tests__/store-trial-config.test.js`
+- `git diff --check`
+
+#### 12.6.10 前端运行态可视化已补齐（2026-03-09）
+
+- **设置页已直接显示当前运行态判定**:
+  `web/src/views/Settings.vue` 现会同时展示“配置模式 / 当前生效模式 / 协同命中或独立执行状态 / 降级原因”。用户不再需要切到账号列表或翻日志，切换账号后即可直接看到当前运行时是否按协同模式生效。
+- **账号归属页已补模式运行态信息**:
+  `web/src/views/AccountOwnership.vue` 的模式列现在不再只显示静态 `accountMode`，而会继续补出“生效模式”或“独立执行原因”，管理员在排查同 owner 账号是否真正命中协同时更直观。
+- **账号管理页的表格排序状态已恢复持久化闭环**:
+  `Accounts.vue` 初始化时会恢复本地保存的表格排序状态，并在用户切换排序后自动回写存储；这同时把之前遗留的 `readTableSortState / persistTableSortState / applyQueryState` 未接入问题一起收口了。
+
+#### 12.6.11 本轮额外发现并处理的前端构建阻塞
+
+- **`Settings.vue` 的设置对象读取需要显式宽化类型**:
+  `useSettingStore()` 当前导出的 `settings` 类型仍偏向“全局设置”字段，不完全覆盖账号维度字段；本轮已改为在账号设置拼装函数内显式走 `any` 读取，保证运行时字段访问不阻塞 `vue-tsc`。
+- **`Accounts.vue` 之前存在“半接入导致构建失败”的代码路径**:
+  表格排序恢复、URL 查询恢复和批量结果提示这组函数原先存在接线不完整的问题；本轮已恢复初始化链路并保留批量操作提示与复制筛选链接入口，避免再触发 `TS6133`/`TS2304`。
+- **`core/src/models/store.js` 有一处尾随空格会阻塞 `git diff --check`**:
+  本轮已顺手清掉，避免后续继续影响发布前自检。
+
+#### 12.6.12 本轮追加验证
+
+- `pnpm -C web exec vue-tsc --noEmit`
+- `pnpm -C web build`
+- `git diff --check`
+
+### 12.6.10 OpenViking 本地开发链路补充修正（2026-03-09）
+
+#### 12.6.10.1 本轮新增修正
+
+- **OpenViking 默认端口已统一改为 `5432`**:
+  `aiStatus`、AI 守护脚本、上下文客户端、OpenViking Python 服务和相关测试/示例环境文件已统一切到 `http://localhost:5432`，避免继续与 macOS 自带 AirTunes 常见占用端口 `5000` 冲突。
+- **根目录 AI 脚本已移除对 `axios` 的隐式依赖**:
+  复测本地 AI 守护链路时发现，`scripts/service/ai-services-daemon.js` 与 `services/openviking/client.js` 在仓库根目录直接运行时会因找不到 `axios` 立即退出。现已改为使用 Node 内置 `fetch`，减少额外安装要求，也避免守护进程“刚拉起就秒退”的假启动。
+- **运行配置已同步收口**:
+  项目根 `.env`、`core/.env.ai`、`services/openviking/.env` 与 `.env.example` 已同步到 `5432`，避免默认值、模板文件和实际本地运行参数各说各话。
+
+#### 12.6.10.2 本轮影响判断
+
+- **对本地 AI 开发环境的影响**:
+  重启本地 AI 守护或 OpenViking 后，健康检查和上下文客户端将默认改走 `5432`。如果用户机器上恰好有 PostgreSQL 占用该端口，则需要手动再改成其他未占用端口。
+- **对主程序业务链路的影响**:
+  这次调整仅作用于本地 OpenViking / AI 开发辅助链路，不影响农场调度、经营汇报和账号运行时逻辑。
+
+#### 12.6.10.3 本轮补充验证
+
+- `node --check core/src/controllers/aiStatus.js`
+- `node --check scripts/service/ai-services-daemon.js`
+- `node --check core/src/services/contextManager.js`
+- `node --check services/openviking/client.js`
+- `python3 -m py_compile services/openviking/app.py`
+
+### 12.6.11 OpenViking 守护链路补充收口（2026-03-09）
+
+#### 12.6.11.1 本轮新增修正
+
+- **守护进程会先识别并接管已健康的 `5432` 实例**:
+  `ai-services-daemon.js` 启动前会先做健康检查，若端口上已经有可用 OpenViking，则不再重复拉起第二个 Python 进程，避免“已有实例存活，但守护继续撞端口”的假启动。
+- **启动成功判定改为“进程存活 + 健康就绪”**:
+  原先固定等待后只要健康接口能通就记为成功，容易把旧实例的健康状态误当成新子进程成功。现在改为轮询子进程本身的退出状态，若提前退出会直接判定失败并回收。
+- **状态输出补齐“外部实例”和“端口占用但不健康”两类场景**:
+  `ai-autostart status` 与 `/api/ai/status` 新增端口占用识别，能区分“守护未运行但服务仍在外部运行”和“端口残留监听但健康检查失败”，减少排查歧义。
+- **守护进程退出时会主动清理自己的 PID 文件**:
+  `ai-services-daemon.js` 现在会在启动时覆盖写入 `logs/ai-daemon.pid`，并在退出时仅删除属于自身 PID 的文件，减少 stale pid 导致的误报。
+- **新增 `doctor` 诊断入口**:
+  `node scripts/service/ai-autostart.js doctor --cwd .` 会汇总守护状态、PID 文件、`5432/8080` 监听进程和最近日志，方便本地 AI 开发链路排查残留实例。
+- **运行状态新增统一模式标识**:
+  `status`、`doctor` 和 `/api/ai/status` 现在统一输出 `managed / managed_starting / external / conflict / offline` 模式，减少“同一现场不同地方显示不同结论”的情况。
+
+#### 12.6.11.2 运行态发现
+
+- **当前机器仍有历史残留实例占用 `5432`**:
+  复测时 `lsof -nP -iTCP:5432 -sTCP:LISTEN` 仍能看到旧的 `services/openviking` Python 进程占口，但当前沙箱中的 `curl/fetch` 无法直接探活它，说明本次代码修正之外，还需要人工清理旧残留实例后才能得到完全干净的启停验证结果。
+- **`8080` 的 AGFS 也曾出现残留占用**:
+  启动日志里出现过 `AGFS port 8080 is already in use`。这类残留会让守护进程在 OpenViking 主进程尚未绑定 `5432` 前就提前失败，需要一起检查。
+
+#### 12.6.11.3 本轮补充验证
+
+- `node --check scripts/service/ai-services-daemon.js`
+- `node --check scripts/service/ai-autostart.js`
+- `node --check core/src/controllers/aiStatus.js`
+- `node --test core/__tests__/ai-autostart-status.test.js`
+- `git diff --check`

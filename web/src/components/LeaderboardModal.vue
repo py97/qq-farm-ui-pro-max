@@ -120,6 +120,10 @@ function formatUptime(seconds: number) {
   return `${mins}m`
 }
 
+function isAccountOnline(item: any) {
+  return !!item?.connected
+}
+
 onMounted(() => {
   if (props.show) {
     fetchLeaderboard()
@@ -274,12 +278,12 @@ onMounted(() => {
 
                 <!-- 金币 -->
                 <div class="col-span-2 truncate text-right text-amber-600 font-medium dark:text-amber-500">
-                  {{ item.running ? formatNumber(item.gold) : '-' }}
+                  {{ item.running || item.connected ? formatNumber(item.gold) : '-' }}
                 </div>
 
                 <!-- 点券 -->
                 <div class="col-span-1 truncate text-right text-gray-600 dark:text-gray-300">
-                  {{ item.running ? formatNumber(item.coupon) : '-' }}
+                  {{ item.running || item.connected ? formatNumber(item.coupon) : '-' }}
                 </div>
 
                 <!-- 时长 -->
@@ -291,10 +295,10 @@ onMounted(() => {
                 <div class="col-span-1 flex justify-center">
                   <span
                     class="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 py-1 text-[10px] font-bold leading-none"
-                    :class="item.running ? 'bg-primary-500/10 text-primary-500 border border-primary-500/20' : 'bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-500 border border-transparent'"
+                    :class="isAccountOnline(item) ? 'bg-primary-500/10 text-primary-500 border border-primary-500/20' : 'bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-500 border border-transparent'"
                   >
-                    <span class="h-1.5 w-1.5 animate-pulse rounded-full" :class="item.running ? 'bg-primary-500' : 'bg-gray-400'" />
-                    {{ item.running ? '在线' : '离线' }}
+                    <span class="h-1.5 w-1.5 animate-pulse rounded-full" :class="isAccountOnline(item) ? 'bg-primary-500' : 'bg-gray-400'" />
+                    {{ isAccountOnline(item) ? '在线' : '离线' }}
                   </span>
                 </div>
               </div>

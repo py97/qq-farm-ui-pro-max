@@ -1,9 +1,12 @@
 const process = require('node:process');
+const { loadProjectEnv } = require('./src/config/load-env');
 /**
  * 主程序 - 进程管理器
  * 负责启动 Web 面板，并管理多个 Bot 子进程
  * 自动启动 AI 服务（OpenViking + 千问 3.5 Plus）
  */
+
+loadProjectEnv();
 
 const { startAdminServer, emitRealtimeStatus, emitRealtimeLog, emitRealtimeAccountLog } = require('./src/controllers/admin');
 const { createRuntimeEngine } = require('./src/runtime/runtime-engine');
@@ -34,6 +37,36 @@ async function startAIServices() {
             error: error && error.message ? error.message : String(error)
         });
     }
+}
+
+function buildStartupBlockMessage(err) {
+    const message = String(err && err.message ? err.message : err || 'unknown');
+    const details = [
+        '系统检测到 MySQL 环境异常或增量迁移失败，为了防止产生级联错误风暴，已安全阻断启动。',
+        '',
+        '📋 已识别的高频原因：',
+    ];
+
+    if (/sql syntax|1064|syntax to use near/i.test(message)) {
+        details.push('1. 当前数据库迁移 SQL 与你的 MySQL / MariaDB 语法不兼容。');
+    } else if (/ECONNREFUSED|connect ECONNREFUSED|ETIMEDOUT/i.test(message)) {
+        details.push('1. MySQL 服务未启动，或端口 / 主机地址不可达。');
+    } else if (/Access denied/i.test(message)) {
+        details.push('1. MySQL 用户名或密码错误。');
+    } else if (/Unknown database/i.test(message)) {
+        details.push('1. 目标数据库不存在，且当前账号没有自动建库权限。');
+    } else {
+        details.push('1. 数据库配置缺失、数据库离线，或增量迁移执行失败。');
+    }
+
+    details.push('2. 旧版 SQLite / JSON 数据尚未正确迁移到 MySQL。');
+    details.push('3. 本地 `.env` / Shell 环境中的 MYSQL_* 或 REDIS_* 参数与实际服务不一致。');
+    details.push('');
+    details.push('💡 【处方建议】：');
+    details.push('👉 本地直跑前先检查根目录 `.env`、MySQL 连通性以及账号密码是否正确');
+    details.push('👉 不想折腾？请直接采用一键容器化启动。在根目录运行: docker compose -f deploy/docker-compose.yml up -d');
+    details.push('👉 需要全新服务器一键部署？请运行: ./scripts/deploy/fresh-install.sh');
+    return details.join('\n');
 }
 
 const isWorkerProcess = process.env.FARM_WORKER === '1';
@@ -70,14 +103,7 @@ if (isWorkerProcess) {
             console.error(`\n${  '='.repeat(70)}`);
             console.error('🚨 【致命启动拦截】数据库环境未就绪或表结构损坏！');
             console.error('='.repeat(70));
-            console.error('系统检测到 MySQL 环境配置异常（例如缺少 `stats_daily` 字段），为了防止产生级联错误风暴，已安全阻断启动。');
-            console.error('\n📋 故障可能原因：');
-            console.error('1. 这是您第一次运行全新版的代码，但忘记了执行建表操作。');
-            console.error('2. 您使用的旧版 SQLite/JSON 未成功转译至新版的 MySQL 连接池。');
-            console.error('3. 数据库 3306 端口离线，或者 `.env` 中的账密连不上。');
-            console.error('\n💡 【处方建议】：');
-            console.error('👉 不想折腾？请直接采用一键容器化启动。在根目录运行: docker compose -f deploy/docker-compose.yml up -d');
-            console.error('👉 需要全新服务器一键部署？请运行: ./scripts/deploy/fresh-install.sh');
+            console.error(buildStartupBlockMessage(err));
             console.error('\n[底层抛错信息]:', err.message);
             console.error(`${'='.repeat(70)  }\n`);
             process.exit(1);

@@ -1,5 +1,8 @@
+const { loadProjectEnv } = require('../config/load-env');
 const mysql = require('mysql2/promise');
 const { createModuleLogger } = require('./logger');
+
+loadProjectEnv();
 
 const logger = createModuleLogger('mysql-db');
 
@@ -125,6 +128,17 @@ async function initMysql() {
                 logger.info('检测到 accounts 表缺少 code 列，正在添加...');
                 await pool.query(`ALTER TABLE accounts ADD COLUMN code VARCHAR(512) DEFAULT '' AFTER uin`);
                 logger.info('✅ accounts.code 列添加完成');
+            }
+
+            const [lastLoginCols] = await pool.execute(
+                `SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = 'accounts' AND COLUMN_NAME = 'last_login_at'`,
+                [DB_NAME]
+            );
+            if (lastLoginCols.length === 0) {
+                await runMigrationFile(
+                    path.join(migrationsDir, '013-account-last-login.sql'),
+                    '检测到 accounts 表缺少 last_login_at 列，正在执行迁移 013-account-last-login.sql',
+                );
             }
 
             const [usedAtCols] = await pool.execute(
@@ -362,10 +376,15 @@ function getPool() {
     return pool;
 }
 
+function isMysqlInitialized() {
+    return _initialized;
+}
+
 module.exports = {
     initMysql,
     query,
     transaction,
     getPool,
-    getPoolStatus
+    getPoolStatus,
+    isMysqlInitialized,
 };

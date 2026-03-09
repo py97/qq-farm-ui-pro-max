@@ -1111,16 +1111,21 @@ function startAdminServer(dataProvider) {
     });
 
     // API: 种植效率排行（数据分析）
-    app.get('/api/analytics', async (req, res) => {
+    app.get('/api/analytics', accountOwnershipRequired, async (req, res) => {
+        const id = await getAccId(req);
+        if (!id) return res.status(400).json({ ok: false, error: 'Missing x-account-id' });
         try {
             const ANALYTICS_SORT_WHITELIST = new Set(['exp', 'fert', 'gold', 'profit', 'fert_profit', 'level']);
+            const ANALYTICS_TIMING_MODE_WHITELIST = new Set(['theoretical', 'actual']);
             const rawSort = String(req.query.sort || 'exp');
             const sortBy = ANALYTICS_SORT_WHITELIST.has(rawSort) ? rawSort : 'exp';
+            const rawTimingMode = String(req.query.timingMode || 'theoretical');
+            const timingMode = ANALYTICS_TIMING_MODE_WHITELIST.has(rawTimingMode) ? rawTimingMode : 'theoretical';
             const levelRaw = req.query.level;
             const levelMax = (levelRaw !== undefined && levelRaw !== '' && Number.isFinite(Number(levelRaw)))
                 ? Number(levelRaw) : null;
             const { getPlantRankings } = require('../services/analytics');
-            const data = getPlantRankings(sortBy, levelMax);
+            const data = getPlantRankings(sortBy, levelMax, { accountId: id, timingMode });
             res.json({ ok: true, data });
         } catch (e) {
             res.status(500).json({ ok: false, error: e.message });
@@ -1135,6 +1140,15 @@ function startAdminServer(dataProvider) {
         }
         try {
             const inputSettings = req.body || {};
+            const requestedMode = inputSettings.accountMode !== undefined
+                ? String(inputSettings.accountMode || '').trim()
+                : '';
+
+            if (requestedMode) {
+                if (!store.ACCOUNT_MODE_PRESETS || !store.ACCOUNT_MODE_PRESETS[requestedMode]) {
+                    return res.status(400).json({ ok: false, error: 'Invalid account mode' });
+                }
+            }
 
             // Phase 1 优化：对非 Admin 角色执行严格的休眠基线限制，防止封禁风控
             if (req.currentUser?.role !== 'admin') {
@@ -1345,7 +1359,18 @@ function startAdminServer(dataProvider) {
             const ui = store.getUI();
             const offlineReminder = store.getOfflineReminder
                 ? store.getOfflineReminder()
-                : { channel: 'webhook', reloginUrlMode: 'none', endpoint: '', token: '', title: '账号下线提醒', msg: '账号下线', offlineDeleteSec: 0 };
+                : {
+                    channel: 'webhook',
+                    reloginUrlMode: 'none',
+                    endpoint: '',
+                    token: '',
+                    title: '账号下线提醒',
+                    msg: '账号下线',
+                    offlineDeleteEnabled: false,
+                    offlineDeleteSec: 1,
+                    webhookCustomJsonEnabled: false,
+                    webhookCustomJsonTemplate: '',
+                };
             const reportConfig = store.getReportConfig
                 ? store.getReportConfig(id)
                 : {
@@ -1383,8 +1408,10 @@ function startAdminServer(dataProvider) {
                     intervals,
                     strategy,
                     plantingStrategy: strategy,
+                    plantingFallbackStrategy: fullSnapshot.plantingFallbackStrategy || 'level',
                     preferredSeed,
                     preferredSeedId: preferredSeed,
+                    inventoryPlanting: fullSnapshot.inventoryPlanting || { mode: 'disabled', globalKeepCount: 0, reserveRules: [] },
                     friendQuietHours,
                     automation,
                     stakeoutSteal,

@@ -36,6 +36,7 @@ function createWorkerManager(options) {
         getOfflineAutoDeleteMs,
         triggerOfflineReminder,
         addOrUpdateAccount,
+        markAccountLoginSuccess,
         deleteAccount,
         upsertFriendBlacklist,
         updateFriendsCache,
@@ -239,6 +240,7 @@ function createWorkerManager(options) {
             addOrUpdateAccount({
                 id: launchAccount.id,
                 running: true,
+                connected: false,
                 wsError: null,
             });
         } catch { }
@@ -290,6 +292,7 @@ function createWorkerManager(options) {
                     addOrUpdateAccount({
                         id: launchAccount.id,
                         running: false,
+                        connected: false,
                         wsError: current.wsError || null,
                     });
                 } catch { }
@@ -309,6 +312,7 @@ function createWorkerManager(options) {
             addOrUpdateAccount({
                 id: accountId,
                 running: false,
+                connected: false,
                 wsError: worker.wsError || null,
             });
         } catch { }
@@ -367,10 +371,13 @@ function createWorkerManager(options) {
         if (!worker) return;
 
         if (msg.type === 'status_sync') {
+            const previousStatus = worker.status || null;
+            const wasConnected = !!(previousStatus && previousStatus.connection && previousStatus.connection.connected);
             // 合并状态
             worker.status = normalizeStatusForPanel(msg.data, accountId, worker.name);
+            const panelStatus = worker.status || {};
             if (typeof onStatusSync === 'function') {
-                onStatusSync(accountId, worker.status, worker.name);
+                onStatusSync(accountId, panelStatus, worker.name);
             }
 
             // 尝试更新昵称到 store
@@ -395,8 +402,24 @@ function createWorkerManager(options) {
                 }
             }
 
-            const connected = !!(msg.data && msg.data.connection && msg.data.connection.connected);
+            const connected = !!(panelStatus.connection && panelStatus.connection.connected);
+            const liveStatus = (panelStatus.status && typeof panelStatus.status === 'object') ? panelStatus.status : {};
+            try {
+                addOrUpdateAccount({
+                    id: accountId,
+                    running: !worker.stopping,
+                    connected,
+                    wsError: worker.wsError || null,
+                    nick: liveStatus.name || worker.nick || '',
+                    level: Number(liveStatus.level) || 0,
+                    gold: Number(liveStatus.gold) || 0,
+                    exp: Number(liveStatus.exp) || 0,
+                    coupon: Number(liveStatus.coupon) || 0,
+                    uptime: Number(panelStatus.uptime) || 0,
+                });
+            } catch { }
             if (connected) {
+                const isFreshLogin = !wasConnected;
                 worker.disconnectedSince = 0;
                 worker.autoDeleteTriggered = false;
                 worker.wsError = null;
@@ -404,9 +427,34 @@ function createWorkerManager(options) {
                     addOrUpdateAccount({
                         id: accountId,
                         running: true,
+                        connected: true,
                         wsError: null,
                     });
                 } catch { }
+                if (isFreshLogin) {
+                    const loginAt = Date.now();
+                    if (typeof markAccountLoginSuccess === 'function') {
+                        void markAccountLoginSuccess(accountId, {
+                            timestamp: loginAt,
+                            running: true,
+                            connected: true,
+                        });
+                    } else {
+                        try {
+                            addOrUpdateAccount({
+                                id: accountId,
+                                lastLoginAt: loginAt,
+                                updatedAt: loginAt,
+                            });
+                        } catch { }
+                    }
+                    addAccountLog(
+                        'login_success',
+                        `账号 ${worker.name} 登录成功，已记录最后登录时间`,
+                        accountId,
+                        worker.name,
+                    );
+                }
             } else if (!worker.stopping) {
                 const now = Date.now();
                 if (!worker.disconnectedSince) worker.disconnectedSince = now;
@@ -473,6 +521,7 @@ function createWorkerManager(options) {
                 addOrUpdateAccount({
                     id: accountId,
                     running: false,
+                    connected: false,
                     wsError,
                 });
             } catch { }
@@ -499,6 +548,7 @@ function createWorkerManager(options) {
                                 qq: refreshedAccount.qq || '',
                                 wsError: null,
                                 running: false,
+                                connected: false,
                             });
                             addAccountLog(
                                 'auth_refresh',

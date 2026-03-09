@@ -1,0 +1,739 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>QQ农场智能助手 - 整体测试报告与优化建议</title>
+  <style>
+    :root {
+      --bg: #f4efe6;
+      --bg-accent: radial-gradient(circle at top left, rgba(199, 141, 78, 0.18), transparent 36%), radial-gradient(circle at top right, rgba(26, 87, 77, 0.14), transparent 28%), linear-gradient(180deg, #f8f2e8 0%, #efe7da 54%, #e8ddd0 100%);
+      --panel: rgba(255, 250, 243, 0.88);
+      --panel-strong: rgba(255, 248, 237, 0.98);
+      --border: rgba(64, 43, 25, 0.12);
+      --text: #2f251c;
+      --muted: #6f6357;
+      --good: #256245;
+      --warn: #916218;
+      --bad: #8f2e2e;
+      --info: #1f4f66;
+      --shadow: 0 18px 42px rgba(72, 49, 27, 0.08);
+      --radius-lg: 28px;
+      --radius-md: 18px;
+      --radius-sm: 12px;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: "PingFang SC", "Hiragino Sans GB", "Noto Sans SC", "Microsoft YaHei", sans-serif;
+      color: var(--text);
+      background: var(--bg-accent);
+      line-height: 1.65;
+    }
+
+    .page {
+      width: min(1180px, calc(100% - 32px));
+      margin: 28px auto 56px;
+    }
+
+    .hero {
+      position: relative;
+      overflow: hidden;
+      padding: 34px 34px 28px;
+      border: 1px solid var(--border);
+      border-radius: 36px;
+      background:
+        linear-gradient(135deg, rgba(255, 248, 236, 0.96), rgba(250, 241, 230, 0.88)),
+        linear-gradient(120deg, rgba(141, 97, 47, 0.18), transparent 42%);
+      box-shadow: var(--shadow);
+    }
+
+    .hero::after {
+      content: "";
+      position: absolute;
+      inset: auto -90px -90px auto;
+      width: 280px;
+      height: 280px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(46, 106, 96, 0.16), transparent 68%);
+      pointer-events: none;
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      padding: 6px 12px;
+      border-radius: 999px;
+      background: rgba(46, 106, 96, 0.12);
+      color: #215145;
+      font-size: 13px;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      font-weight: 700;
+    }
+
+    h1, h2, h3 {
+      margin: 0;
+      font-family: "Source Han Serif SC", "Noto Serif SC", "Songti SC", serif;
+      font-weight: 700;
+      letter-spacing: 0.01em;
+    }
+
+    h1 {
+      margin-top: 16px;
+      font-size: clamp(30px, 4vw, 46px);
+      line-height: 1.12;
+    }
+
+    h2 {
+      font-size: 28px;
+      margin-bottom: 16px;
+    }
+
+    h3 {
+      font-size: 20px;
+      margin-bottom: 10px;
+    }
+
+    p {
+      margin: 0 0 14px;
+    }
+
+    .hero p {
+      max-width: 820px;
+      color: var(--muted);
+      margin-top: 14px;
+      font-size: 16px;
+    }
+
+    .meta {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 14px;
+      margin-top: 28px;
+    }
+
+    .metric {
+      padding: 18px 18px 16px;
+      border-radius: var(--radius-md);
+      background: rgba(255, 252, 247, 0.72);
+      border: 1px solid rgba(82, 61, 42, 0.1);
+      min-height: 118px;
+    }
+
+    .metric strong {
+      display: block;
+      font-size: 32px;
+      line-height: 1;
+      margin-bottom: 10px;
+    }
+
+    .metric span {
+      display: block;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .section {
+      margin-top: 22px;
+      padding: 30px 30px 26px;
+      border-radius: var(--radius-lg);
+      background: var(--panel);
+      border: 1px solid var(--border);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(12px);
+    }
+
+    .section-intro {
+      color: var(--muted);
+      margin-bottom: 18px;
+    }
+
+    .columns {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 18px;
+    }
+
+    .card {
+      padding: 20px;
+      border-radius: var(--radius-md);
+      background: var(--panel-strong);
+      border: 1px solid rgba(66, 50, 36, 0.1);
+    }
+
+    .status-list,
+    .bullet-list {
+      margin: 0;
+      padding-left: 20px;
+    }
+
+    .status-list li,
+    .bullet-list li {
+      margin-bottom: 10px;
+    }
+
+    .tag-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 8px;
+    }
+
+    .tag {
+      display: inline-flex;
+      align-items: center;
+      padding: 7px 12px;
+      border-radius: 999px;
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 0.01em;
+    }
+
+    .tag.good {
+      background: rgba(37, 98, 69, 0.11);
+      color: var(--good);
+    }
+
+    .tag.warn {
+      background: rgba(145, 98, 24, 0.11);
+      color: var(--warn);
+    }
+
+    .tag.bad {
+      background: rgba(143, 46, 46, 0.11);
+      color: var(--bad);
+    }
+
+    .tag.info {
+      background: rgba(31, 79, 102, 0.11);
+      color: var(--info);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      overflow: hidden;
+      border-radius: 16px;
+      background: rgba(255, 250, 243, 0.9);
+    }
+
+    th, td {
+      padding: 14px 12px;
+      border-bottom: 1px solid rgba(74, 55, 37, 0.08);
+      text-align: left;
+      vertical-align: top;
+      font-size: 14px;
+    }
+
+    th {
+      font-size: 13px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      background: rgba(250, 243, 233, 0.96);
+    }
+
+    tbody tr:last-child td {
+      border-bottom: none;
+    }
+
+    code {
+      padding: 2px 6px;
+      border-radius: 8px;
+      background: rgba(78, 57, 37, 0.07);
+      font-family: "SFMono-Regular", "Menlo", "Consolas", monospace;
+      font-size: 13px;
+      color: #5e4228;
+      word-break: break-all;
+    }
+
+    .finding-grid {
+      display: grid;
+      gap: 16px;
+    }
+
+    .finding {
+      padding: 20px 20px 16px;
+      border-radius: 20px;
+      border: 1px solid rgba(88, 60, 34, 0.12);
+      background: rgba(255, 251, 245, 0.92);
+    }
+
+    .finding[data-level="P1"] {
+      border-left: 8px solid #9d3d30;
+    }
+
+    .finding[data-level="P2"] {
+      border-left: 8px solid #b27922;
+    }
+
+    .finding[data-level="P3"] {
+      border-left: 8px solid #2d6a5b;
+    }
+
+    .finding-head {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+
+    .finding-id {
+      padding: 6px 10px;
+      border-radius: 999px;
+      background: rgba(69, 49, 33, 0.08);
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+    }
+
+    .finding p:last-child {
+      margin-bottom: 0;
+    }
+
+    .evidence {
+      margin-top: 12px;
+      padding: 14px 16px;
+      border-radius: 14px;
+      background: rgba(247, 239, 227, 0.82);
+      color: #514235;
+      font-size: 14px;
+    }
+
+    .subtle {
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .recommendation-list {
+      display: grid;
+      gap: 14px;
+      margin-top: 4px;
+    }
+
+    .recommendation {
+      padding: 18px 18px 14px;
+      border-radius: 18px;
+      background: rgba(255, 251, 244, 0.94);
+      border: 1px solid rgba(68, 49, 31, 0.1);
+    }
+
+    .recommendation strong {
+      display: inline-block;
+      margin-bottom: 8px;
+      font-size: 16px;
+    }
+
+    .footer-note {
+      margin-top: 20px;
+      padding: 16px 18px;
+      border-radius: 16px;
+      background: rgba(34, 78, 72, 0.08);
+      color: #295046;
+      font-size: 14px;
+    }
+
+    @media (max-width: 920px) {
+      .meta,
+      .columns {
+        grid-template-columns: 1fr 1fr;
+      }
+    }
+
+    @media (max-width: 720px) {
+      .page {
+        width: min(100% - 20px, 1180px);
+        margin-top: 16px;
+      }
+
+      .hero,
+      .section {
+        padding: 22px 18px 20px;
+        border-radius: 24px;
+      }
+
+      .meta,
+      .columns {
+        grid-template-columns: 1fr;
+      }
+
+      h2 {
+        font-size: 24px;
+      }
+
+      table, thead, tbody, th, td, tr {
+        display: block;
+      }
+
+      thead {
+        display: none;
+      }
+
+      tbody tr {
+        margin-bottom: 12px;
+        padding: 12px;
+        border-radius: 14px;
+        background: rgba(255, 252, 247, 0.92);
+        border: 1px solid rgba(72, 52, 31, 0.08);
+      }
+
+      td {
+        padding: 8px 0;
+        border: none;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <section class="hero">
+      <div class="eyebrow">QA Full-Scope Test Report</div>
+      <h1>QQ农场智能助手 整体测试报告与优化建议</h1>
+      <p>测试日期：2026-03-07。测试方式覆盖浏览器端交互、接口实测、本地构建验证与关键代码核对。本次测试基于当前工作区代码，以及已运行的 <code>http://localhost:3000</code> 实例完成。</p>
+      <div class="meta">
+        <article class="metric">
+          <strong>33</strong>
+          <span>已执行检查项</span>
+        </article>
+        <article class="metric">
+          <strong>25</strong>
+          <span>通过或符合预期</span>
+        </article>
+        <article class="metric">
+          <strong>5</strong>
+          <span>需优先处理的问题</span>
+        </article>
+        <article class="metric">
+          <strong>3</strong>
+          <span>环境与部署风险</span>
+        </article>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>执行摘要</h2>
+      <p class="section-intro">当前版本的登录、锁定、防刷、体验卡、注册、后端 RBAC 与部分设置读取能力整体可用，但仍存在几项会直接影响线上体验与权限边界的核心问题，不能视为“完全通过”。</p>
+      <ul class="status-list">
+        <li>认证主链路基本可用：错误登录会提示失败，多次失败会触发 <code>429</code> 锁定，管理员与普通用户都能成功建立登录态。</li>
+        <li>后端权限边界整体正确：普通用户访问 <code>/api/users</code>、<code>/api/cards</code> 会被 <code>403</code> 拒绝，匿名访问受保护接口会得到 <code>401</code>。</li>
+        <li>前端权限边界不完整：普通用户虽然看不到管理员菜单，但直接输入 <code>/users</code> 仍能进入管理员页面外壳，随后才在数据层被 <code>403</code> 打回。</li>
+        <li>运行态存在实质故障：管理员可见的两个账号均显示 <code>running: true</code>，但实际 <code>connected: false</code>，并持续出现 WebSocket <code>400</code> 错误，说明挂机主链路当前未正常工作。</li>
+        <li>配置一致性存在问题：前端默认把 <code>offlineDeleteSec</code> 设为 <code>120</code>，而真实接口对两个账号都返回 <code>0</code>，页面也展示为 <code>0</code>。</li>
+        <li>普通用户修改全局主题时接口会返回 <code>200 OK</code>，但后端不落库，属于“看起来保存成功、实际上未生效”的静默成功行为。</li>
+      </ul>
+      <div class="tag-row">
+        <span class="tag good">认证链路已验证</span>
+        <span class="tag good">公开试用卡限频已验证</span>
+        <span class="tag warn">前后端权限体验不一致</span>
+        <span class="tag bad">运行态账号当前不可用</span>
+        <span class="tag warn">设置默认值与实值不一致</span>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>测试环境与限制</h2>
+      <div class="columns">
+        <article class="card">
+          <h3>实际执行环境</h3>
+          <ul class="bullet-list">
+            <li>工作区：<code>/Users/smdk000/文稿/qq/qq-farm-bot-ui-main_副本</code></li>
+            <li>Node.js：<code>v22.21.1</code></li>
+            <li>pnpm：<code>10.30.2</code></li>
+            <li>浏览器实测：Playwright 驱动的 Chromium</li>
+            <li>目标实例：<code>http://localhost:3000</code></li>
+            <li>验证方式：UI 操作 + fetch 接口校验 + 构建输出审查 + 代码定位</li>
+          </ul>
+        </article>
+        <article class="card">
+          <h3>本次测试限制</h3>
+          <ul class="bullet-list">
+            <li>独立启动后端实例失败：<code>pnpm dev:core</code> 因 MySQL 连接 <code>127.0.0.1:4409</code> 被拒绝而中断，故 QR 登录、真实调度、好友操作等依赖现网的深链路无法在隔离环境全量复现。</li>
+            <li>运行中的本地实例当前本身处于“账号离线但状态仍为 running”状态，因此无法把成熟收菜、好友巡查、流程节点执行等动作测到真正业务成功。</li>
+            <li>本次为了覆盖注册链路，新增了一张测试体验卡和一个测试用户，未做清理，以避免误删业务数据。</li>
+          </ul>
+        </article>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>覆盖范围与结果概览</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>模块</th>
+            <th>覆盖内容</th>
+            <th>结果</th>
+            <th>备注</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>构建与启动</td>
+            <td>Node/pnpm 检查、前端构建、独立后端启动</td>
+            <td><span class="tag warn">部分通过</span></td>
+            <td>前端可构建，但外部字体/图标加载报错；独立后端启动被 MySQL 阻塞。</td>
+          </tr>
+          <tr>
+            <td>登录与认证</td>
+            <td>错误密码、频繁失败锁定、管理员登录、普通用户登录、匿名鉴权</td>
+            <td><span class="tag good">通过</span></td>
+            <td>登录失败提示和 5 分钟锁定生效，匿名访问受保护接口返回 401。</td>
+          </tr>
+          <tr>
+            <td>权限与路由</td>
+            <td>管理员菜单、普通用户隐藏菜单、普通用户直达管理员路由、API 403</td>
+            <td><span class="tag warn">存在问题</span></td>
+            <td>后端 RBAC 正确，但前端路由未做角色守卫。</td>
+          </tr>
+          <tr>
+            <td>账号与运行态</td>
+            <td>账号列表、账号状态、日志、排行榜、通知</td>
+            <td><span class="tag warn">存在问题</span></td>
+            <td>两个账号都处于运行中但未连接，日志持续出现 WS 400。</td>
+          </tr>
+          <tr>
+            <td>设置与配置</td>
+            <td>设置页加载、真实设置接口、普通用户主题保存行为</td>
+            <td><span class="tag warn">存在问题</span></td>
+            <td><code>offlineDeleteSec</code> 默认值与真实返回不一致，普通用户保存全局主题静默成功但不生效。</td>
+          </tr>
+          <tr>
+            <td>公开入口</td>
+            <td>体验卡生成、IP 冷却、注册、卡密复用失败</td>
+            <td><span class="tag good">通过</span></td>
+            <td>首张体验卡生成成功，二次请求因冷却被拒绝，注册成功后卡密不可复用。</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section class="section">
+      <h2>关键问题与证据</h2>
+      <div class="finding-grid">
+        <article class="finding" data-level="P1">
+          <div class="finding-head">
+            <span class="finding-id">P1-01</span>
+            <h3>普通用户可直接进入管理员页面外壳，前端角色守卫缺失</h3>
+          </div>
+          <p>普通用户 <code>admin1</code> 登录后，侧边栏中的管理员菜单项已经隐藏，但手动访问 <code>/users</code> 时仍能打开“用户管理”页面骨架，页面随后因数据接口 <code>403</code> 显示“请求失败”。这说明当前前端只做了菜单隐藏，没有做路由级角色阻断。</p>
+          <div class="evidence">
+            实测证据：普通用户直接打开 <code>/users</code>，页面标题显示“用户管理”，表格为空，toast 提示 <code>请求失败: Request failed with status code 403</code>。<br>
+            代码定位：<code>/Users/smdk000/文稿/qq/qq-farm-bot-ui-main_副本/web/src/router/index.ts:87-115</code> 只验证是否登录；<code>/Users/smdk000/文稿/qq/qq-farm-bot-ui-main_副本/web/src/components/Sidebar.vue:320-328</code> 仅隐藏菜单；管理员路由只在 <code>/Users/smdk000/文稿/qq/qq-farm-bot-ui-main_副本/web/src/router/menu.ts:74-105</code> 标注 <code>adminOnly</code>，但未参与路由前置守卫判断。
+          </div>
+        </article>
+
+        <article class="finding" data-level="P1">
+          <div class="finding-head">
+            <span class="finding-id">P1-02</span>
+            <h3>运行中的账号实际未连接，挂机主链路当前不可用</h3>
+          </div>
+          <p>管理员账号视角下，系统显示有两个账号处于运行中，但两者都返回 <code>connected: false</code>，并在仪表盘日志中持续报出 <code>[WS] 错误: Unexpected server response: 400</code> 与“连接被拒绝，可能需要更新 Code”。这不是单纯 UI 问题，而是实际业务运行态故障。</p>
+          <div class="evidence">
+            实测证据：<code>/api/accounts</code> 返回账号 <code>30</code> 与 <code>1004</code> 均为 <code>running: true</code> 且 <code>connected: false</code>；仪表盘日志连续出现 WebSocket 400。<br>
+            影响：成熟秒收、好友巡查、流程编排、通知触发等核心链路当前无法被视为可用。
+          </div>
+        </article>
+
+        <article class="finding" data-level="P1">
+          <div class="finding-head">
+            <span class="finding-id">P1-03</span>
+            <h3>账号数据存在空用户名记录，租户归属存在完整性风险</h3>
+          </div>
+          <p>管理员接口返回的账号列表中存在一条 <code>id = 1004</code> 的记录，其 <code>username</code> 为空字符串，但账号依然处于运行态。这会让“账号必须归属于某个用户”的假设失效，后续权限过滤与数据审计都可能出现灰区。</p>
+          <div class="evidence">
+            实测证据：<code>/api/accounts</code> 返回 <code>{ id: 1004, username: "", running: true, connected: false }</code>。<br>
+            代码定位：<code>/Users/smdk000/文稿/qq/qq-farm-bot-ui-main_副本/core/src/controllers/admin.js:1104-1112</code> 对普通用户只按 <code>a.username === req.currentUser.username</code> 过滤。这意味着 ownerless 账号会被系统视为特殊状态，必须在持久化层面明确禁止或单独标识。
+          </div>
+        </article>
+
+        <article class="finding" data-level="P2">
+          <div class="finding-head">
+            <span class="finding-id">P2-01</span>
+            <h3>下线删除秒数默认值与真实返回值不一致</h3>
+          </div>
+          <p>前端设置仓库把 <code>offlineDeleteSec</code> 默认值声明为 <code>120</code>，但当前两个账号真实的 <code>/api/settings</code> 返回都为 <code>0</code>，设置页实际显示也是 <code>0</code>。如果 <code>0</code> 被解释为立即删除、关闭删除，或者保留默认，都可能导致运营理解与系统行为不一致。</p>
+          <div class="evidence">
+            实测证据：账号 <code>30</code> 与 <code>1004</code> 的 <code>/api/settings</code> 均返回 <code>offlineReminder.offlineDeleteSec = 0</code>。<br>
+            代码定位：前端默认值为 <code>/Users/smdk000/文稿/qq/qq-farm-bot-ui-main_副本/web/src/stores/setting.ts:130-138</code>；后端返回路径在 <code>/Users/smdk000/文稿/qq/qq-farm-bot-ui-main_副本/core/src/controllers/admin.js:1091-1097</code>。
+          </div>
+        </article>
+
+        <article class="finding" data-level="P2">
+          <div class="finding-head">
+            <span class="finding-id">P2-02</span>
+            <h3>普通用户保存全局主题时接口返回成功，但实际不生效</h3>
+          </div>
+          <p>普通用户调用 <code>/api/settings/theme</code> 时，接口返回 <code>200 OK</code>，但全局主题配置保持不变。这会把“无权限修改”伪装成“保存成功”，属于典型的静默成功问题。对最终用户来说，这是设置成功假象，不利于排查。</p>
+          <div class="evidence">
+            实测证据：普通用户提交主题切换请求后，接口返回 <code>200</code> 且数据仍为原值 <code>{ theme: "dark" }</code>，随后再次读取 <code>/api/ui-config</code> 结果未变化。<br>
+            代码定位：<code>/Users/smdk000/文稿/qq/qq-farm-bot-ui-main_副本/core/src/controllers/admin.js:985-1004</code> 对非管理员直接返回当前 UI 配置，不写库。
+          </div>
+        </article>
+
+        <article class="finding" data-level="P3">
+          <div class="finding-head">
+            <span class="finding-id">P3-01</span>
+            <h3>构建对外网字体与若干 UnoCSS 图标有隐式依赖</h3>
+          </div>
+          <p><code>pnpm build:web</code> 虽然最终成功，但在受限网络下会报 Google Fonts 拉取失败，并且多组 UnoCSS 图标名无法加载。这会降低离线构建的稳定性，也会让产物质量依赖外部网络。</p>
+          <div class="evidence">
+            实测证据：构建输出出现 <code>Failed to fetch web fonts: https://fonts.googleapis.com/...</code>、<code>getaddrinfo ENOTFOUND fonts.googleapis.com</code>，同时反复出现 <code>failed to load icon</code>。<br>
+            影响：部署环境若断外网、DNS 收敛或被墙，构建日志会持续报错，视觉一致性与可复现性下降。
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>已通过的关键检查</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>编号</th>
+            <th>检查项</th>
+            <th>结果</th>
+            <th>关键输出</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>AUTH-01</td>
+            <td>错误密码登录反馈</td>
+            <td><span class="tag good">通过</span></td>
+            <td>错误账号密码会提示“用户名或密码错误”。</td>
+          </tr>
+          <tr>
+            <td>AUTH-02</td>
+            <td>频繁登录失败锁定</td>
+            <td><span class="tag good">通过</span></td>
+            <td>多次失败后触发 <code>429</code>，提示“登录尝试过多，请 5 分钟后再试”。</td>
+          </tr>
+          <tr>
+            <td>AUTH-03</td>
+            <td>匿名访问受保护接口</td>
+            <td><span class="tag good">通过</span></td>
+            <td><code>/api/auth/validate</code>、<code>/api/accounts</code>、<code>/api/settings/theme</code> 匿名请求均返回 <code>401</code>。</td>
+          </tr>
+          <tr>
+            <td>RBAC-01</td>
+            <td>普通用户菜单过滤</td>
+            <td><span class="tag good">通过</span></td>
+            <td>普通用户侧边栏不显示“公告管理 / 系统日志 / 用户 / 卡密”。</td>
+          </tr>
+          <tr>
+            <td>RBAC-02</td>
+            <td>普通用户调用管理员接口</td>
+            <td><span class="tag good">通过</span></td>
+            <td><code>/api/users</code>、<code>/api/cards</code> 返回 <code>403 Forbidden</code>。</td>
+          </tr>
+          <tr>
+            <td>RBAC-03</td>
+            <td>普通用户账号数据隔离</td>
+            <td><span class="tag good">通过</span></td>
+            <td><code>/api/accounts</code> 对普通用户返回空数组，没有泄露管理员账号。</td>
+          </tr>
+          <tr>
+            <td>PUBLIC-01</td>
+            <td>体验卡生成与 IP 冷却</td>
+            <td><span class="tag good">通过</span></td>
+            <td>首次生成成功，第二次请求被 <code>400</code> 拒绝并返回 <code>retryAfterMs</code>。</td>
+          </tr>
+          <tr>
+            <td>PUBLIC-02</td>
+            <td>试用卡注册</td>
+            <td><span class="tag good">通过</span></td>
+            <td>使用体验卡成功注册用户 <code>testu134267</code>。</td>
+          </tr>
+          <tr>
+            <td>PUBLIC-03</td>
+            <td>同一卡密重复注册</td>
+            <td><span class="tag good">通过</span></td>
+            <td>再次使用同一卡密会得到 <code>400</code>，错误为“卡密已被禁用”。</td>
+          </tr>
+          <tr>
+            <td>ADMIN-01</td>
+            <td>管理员接口权限</td>
+            <td><span class="tag good">通过</span></td>
+            <td>管理员视角下 <code>/api/users</code>、<code>/api/cards</code>、<code>/api/leaderboard</code>、<code>/api/notifications</code> 均返回 <code>200</code>。</td>
+          </tr>
+          <tr>
+            <td>CFG-01</td>
+            <td>设置页主面板加载</td>
+            <td><span class="tag good">通过</span></td>
+            <td>策略、自动化、下线提醒、时间参数、集群、体验卡、第三方 API、外观配置均正常渲染。</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section class="section">
+      <h2>构建与代码层补充观察</h2>
+      <div class="columns">
+        <article class="card">
+          <h3>设置校验覆盖面偏窄</h3>
+          <p>统一设置校验器 <code>validateSettings</code> 只覆盖了 <code>automation</code>、<code>intervals</code>、<code>friendQuietHours</code>、偷菜过滤、蹲守、种植策略与工作流。全局主题、下线提醒、第三方 API、体验卡配置、时间参数、集群路由并不在这套 Schema 里。</p>
+          <p class="subtle">代码定位：<code>/Users/smdk000/文稿/qq/qq-farm-bot-ui-main_副本/core/src/services/config-validator.js:293-356</code>。</p>
+        </article>
+        <article class="card">
+          <h3>受保护接口依赖全局 API 鉴权中间件</h3>
+          <p>虽然个别路由定义本身没有单独写 <code>authRequired</code>，但当前运行实例通过 <code>/api</code> 级别的统一中间件兜底鉴权，因此匿名访问仍然得到 <code>401</code>。这一点在实测中已经验证。</p>
+          <p class="subtle">代码定位：<code>/Users/smdk000/文稿/qq/qq-farm-bot-ui-main_副本/core/src/controllers/admin.js:366-373</code>。</p>
+        </article>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>优化建议</h2>
+      <div class="recommendation-list">
+        <article class="recommendation">
+          <strong>1. 给前端路由补齐角色守卫，禁止普通用户挂载管理员视图</strong>
+          <p>建议把 <code>menuRoutes</code> 中的 <code>adminOnly</code> 纳入 <code>router.beforeEach</code> 判定。在拿到当前登录用户角色后，遇到管理员页面应直接重定向到首页或 403 页面，而不是先渲染再由接口报错。</p>
+        </article>
+        <article class="recommendation">
+          <strong>2. 先处理 WebSocket 400 与“running 但 disconnected”矛盾状态</strong>
+          <p>这是当前最直接影响可用性的主故障。需要检查 Code 版本、握手协议、服务端 WS 路径、账号登录平台参数与自动重连逻辑。建议同时把前端状态拆成“已启动 / 已连接 / 最近错误”三层，避免把不可用账号继续呈现为正常运行。</p>
+        </article>
+        <article class="recommendation">
+          <strong>3. 对 ownerless 账号做数据迁移和持久化约束</strong>
+          <p>禁止新增或保存 <code>username = ""</code> 的账号。若系统必须支持“公共账号”，应显式增加 <code>ownerType = system</code> 之类的字段，而不是用空字符串混用用户归属语义。</p>
+        </article>
+        <article class="recommendation">
+          <strong>4. 统一下线删除秒数的默认语义与校验策略</strong>
+          <p>明确 <code>0</code> 的业务含义，然后同步修复前端默认值、后端默认返回值、页面说明文案与保存校验。当前至少需要让“默认值”和“实际回显值”保持一致。</p>
+        </article>
+        <article class="recommendation">
+          <strong>5. 取消普通用户的“静默成功”保存体验</strong>
+          <p>对于普通用户修改全局主题、下线提醒等无权限操作，建议返回明确的权限错误，或者由前端在提交前直接隐藏保存按钮并提示“仅管理员可修改全局配置”。这比返回 <code>200</code> 但不生效更易维护。</p>
+        </article>
+        <article class="recommendation">
+          <strong>6. 为全局设置类接口增加一致的 Schema 校验</strong>
+          <p>建议把 <code>theme</code>、<code>offlineReminder</code>、<code>trialConfig</code>、<code>thirdPartyApi</code>、<code>clusterConfig</code>、<code>timingConfig</code> 纳入统一的类型、枚举、边界与空值校验体系，避免配置入口分散后出现行为漂移。</p>
+        </article>
+        <article class="recommendation">
+          <strong>7. 清理外部构建依赖，保证离线可构建</strong>
+          <p>建议把 Google Fonts 改为本地打包字体或系统字体降级，并核对 UnoCSS 图标名是否写错。当前构建虽然成功，但部署环境对外网依赖仍然偏强。</p>
+        </article>
+        <article class="recommendation">
+          <strong>8. 建立最小自动化回归集</strong>
+          <p>优先补 8 组自动化：登录锁定、普通用户 API 403、普通用户路由守卫、体验卡冷却、卡密复用失败、主题保存权限、<code>/api/accounts</code> 租户隔离、设置回显一致性。这样能最快覆盖这次实测发现的核心风险。</p>
+        </article>
+      </div>
+    </section>
+
+    <section class="section">
+      <h2>本次测试产生的数据</h2>
+      <ul class="bullet-list">
+        <li>新增体验卡：<code>TRIAL-F6GPT2TKALB8</code></li>
+        <li>新增测试用户：<code>testu134267</code></li>
+        <li>测试用户卡类型：体验卡，时长 1 天</li>
+      </ul>
+      <p class="footer-note">以上测试数据未清理。如果你希望我继续，我可以下一步把这份报告再拆成“待修复任务单”或直接开始按优先级修问题。</p>
+    </section>
+  </main>
+</body>
+</html>

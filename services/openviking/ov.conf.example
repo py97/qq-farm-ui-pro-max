@@ -4,17 +4,17 @@
   },
   "embedding": {
     "dense": {
-      "api_base": "https://dashscope.aliyuncs.com/api/v2/apps/protocols/compatible-mode/v1",
+      "api_base": "https://dashscope.aliyuncs.com/compatible-mode/v1",
       "api_key": "sk-your-api-key-here",
-      "provider": "dashscope",
+      "provider": "openai",
       "dimension": 1536,
-      "model": "text-embedding-v3"
+      "model": "text-embedding-v4"
     }
   },
   "vlm": {
-    "api_base": "https://dashscope.aliyuncs.com/api/v2/apps/protocols/compatible-mode/v1",
+    "api_base": "https://dashscope.aliyuncs.com/compatible-mode/v1",
     "api_key": "sk-your-api-key-here",
-    "provider": "dashscope",
+    "provider": "openai",
     "model": "qwen3.5-plus"
   }
 }

@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>2026-03-08 最终复测与待发布说明</title>
+  <style>
+    :root {
+      --bg: #f4f7fb;
+      --panel: #ffffff;
+      --text: #172033;
+      --muted: #667085;
+      --line: #d8e1ef;
+      --ok: #0f9d58;
+      --warn: #b45309;
+      --bad: #dc2626;
+      --info: #2563eb;
+      --ok-soft: #ecfdf3;
+      --warn-soft: #fff7ed;
+      --bad-soft: #fef2f2;
+      --info-soft: #eff6ff;
+      --shadow: 0 16px 36px rgba(15, 23, 42, 0.08);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: linear-gradient(180deg, #eef4ff 0%, var(--bg) 100%);
+      color: var(--text);
+      font: 14px/1.7 "SF Pro Text", "PingFang SC", "Microsoft YaHei", sans-serif;
+    }
+    .wrap {
+      width: min(1180px, calc(100vw - 32px));
+      margin: 24px auto 56px;
+    }
+    .hero, .card {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      box-shadow: var(--shadow);
+    }
+    .hero {
+      padding: 30px 32px;
+      background:
+        radial-gradient(circle at top right, rgba(37, 99, 235, 0.14), transparent 34%),
+        linear-gradient(135deg, #ffffff 0%, #f8fbff 100%);
+    }
+    h1 {
+      margin: 0 0 10px;
+      font-size: 30px;
+      line-height: 1.25;
+    }
+    .sub {
+      margin: 0;
+      color: var(--muted);
+      font-size: 15px;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 16px;
+      margin-top: 20px;
+    }
+    .metric {
+      padding: 16px 18px;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: #fbfdff;
+    }
+    .metric .label {
+      color: var(--muted);
+      font-size: 12px;
+      letter-spacing: .04em;
+      text-transform: uppercase;
+    }
+    .metric .value {
+      margin-top: 8px;
+      font-size: 22px;
+      font-weight: 700;
+    }
+    .section {
+      margin-top: 18px;
+      padding: 22px 24px;
+    }
+    h2 {
+      margin: 0 0 12px;
+      font-size: 21px;
+    }
+    h3 {
+      margin: 16px 0 10px;
+      font-size: 16px;
+    }
+    p { margin: 10px 0; }
+    ul {
+      margin: 10px 0 0;
+      padding-left: 20px;
+    }
+    li { margin: 6px 0; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 12px;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      overflow: hidden;
+    }
+    th, td {
+      padding: 12px 14px;
+      text-align: left;
+      vertical-align: top;
+      border-bottom: 1px solid var(--line);
+    }
+    th {
+      background: #f8fbff;
+      font-size: 13px;
+    }
+    tr:last-child td { border-bottom: none; }
+    .badge {
+      display: inline-block;
+      padding: 4px 10px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 700;
+      vertical-align: middle;
+    }
+    .ok { color: var(--ok); background: var(--ok-soft); }
+    .warn { color: var(--warn); background: var(--warn-soft); }
+    .bad { color: var(--bad); background: var(--bad-soft); }
+    .info { color: var(--info); background: var(--info-soft); }
+    .note {
+      padding: 14px 16px;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: #fafcff;
+    }
+    code {
+      padding: 2px 6px;
+      border-radius: 8px;
+      background: #eef2ff;
+      color: #1d4ed8;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 12px;
+    }
+    .foot {
+      margin-top: 16px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <section class="hero">
+      <h1>最终复测与待发布说明</h1>
+      <p class="sub">生成时间：2026-03-08 08:02 CST。该报告覆盖最新 QQ 重新扫码后的真实链路复测、3000 实例重启级验证、当前系统状态和待发布动作。</p>
+      <div class="grid">
+        <div class="metric">
+          <div class="label">整体状态</div>
+          <div class="value">主链路通过</div>
+        </div>
+        <div class="metric">
+          <div class="label">账号状态</div>
+          <div class="value">2 / 2 在线</div>
+        </div>
+        <div class="metric">
+          <div class="label">重启验证</div>
+          <div class="value">已通过</div>
+        </div>
+        <div class="metric">
+          <div class="label">发布动作</div>
+          <div class="value">等待同步线程</div>
+        </div>
+      </div>
+    </section>
+
+    <section class="card section">
+      <h2>本轮结论</h2>
+      <ul>
+        <li><span class="badge ok">通过</span> 你重新扫码后的 QQ 账号 <code>1005</code> 已保存新授权码并可正常登录，当前 <code>running=true</code>、<code>connected=true</code>。</li>
+        <li><span class="badge ok">通过</span> 微信账号 <code>30</code> 在服务重启后先触发一次旧码 <code>400</code>，随后系统自动续签新码并自动重连成功，当前也保持 <code>running=true</code>、<code>connected=true</code>。</li>
+        <li><span class="badge ok">通过</span> 真实 3000 实例执行了“服务进程杀掉后重新拉起”的破坏性测试，QQ 和微信都恢复到了可运行状态，没有再次出现“假运行态”。</li>
+        <li><span class="badge warn">关注</span> QQ 账号在好友巡回时再次触发了游戏侧 <code>1002003</code> 风控休眠，这是业务风控，不是登录链路故障。程序表现为记录告警并进入休眠，符合当前设计。</li>
+        <li><span class="badge info">等待项</span> 当前不建议立刻提交和推送。按你的要求，应先等待另一个线程完成同步，然后基于合并后的最终代码再做一次发布前冒烟验证。</li>
+      </ul>
+    </section>
+
+    <section class="card section">
+      <h2>本轮测试动作</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>步骤</th>
+            <th>动作</th>
+            <th>结果</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>1</td>
+            <td>登录 <code>http://127.0.0.1:3000</code> 管理接口并检查 <code>/api/accounts</code></td>
+            <td><span class="badge ok">通过</span> QQ <code>1005</code> 和微信 <code>30</code> 均显示在线且已连接。</td>
+          </tr>
+          <tr>
+            <td>2</td>
+            <td>检查账号日志与操作日志</td>
+            <td><span class="badge ok">通过</span> QQ 已出现新的“登录成功”；微信出现 <code>auth_refresh</code> 自动续签记录。</td>
+          </tr>
+          <tr>
+            <td>3</td>
+            <td>杀掉当前 3000 Node 进程并重新启动服务</td>
+            <td><span class="badge ok">通过</span> QQ 直接恢复；微信先报一次 <code>400</code> 后自动续签并重连。</td>
+          </tr>
+          <tr>
+            <td>4</td>
+            <td>重启后再次拉取 <code>/api/accounts</code> 与最近日志</td>
+            <td><span class="badge ok">通过</span> 两个账号均保持 <code>running=true</code>、<code>connected=true</code>，没有残留 <code>wsError</code>。</td>
+          </tr>
+          <tr>
+            <td>5</td>
+            <td>追加 25 秒稳定性观察窗</td>
+            <td><span class="badge ok">通过</span> 双账号持续在线；QQ 进入业务风控休眠，未出现认证掉线或进程退出。</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section class="card section">
+      <h2>关键证据</h2>
+      <h3>当前账号状态</h3>
+      <div class="note">
+        <p><code>1005 / qq / 3400470486</code>：<code>running=true</code>，<code>connected=true</code>，<code>code=41f9df82a36428902cd4f120b35ad0d1</code></p>
+        <p><code>30 / wx_car / wxd8101315</code>：<code>running=true</code>，<code>connected=true</code>，<code>code=0b1uf4000rOXYV1J82300jCGiC4uf404</code></p>
+      </div>
+
+      <h3>重启后日志要点</h3>
+      <ul>
+        <li>QQ：<code>登录成功: 我是大飞哥 (Lv15)</code>，说明重新扫码后的授权码已正确落库，并可用于冷启动恢复。</li>
+        <li>微信：首次握手出现 <code>Unexpected server response: 400</code>，随后系统记录 <code>账号 尤隔情窗唤梦回 微信授权已失效，尝试自动续签...</code>，再进入登录成功。</li>
+        <li>账号操作日志：仅出现本轮新的 <code>auth_refresh</code> 记录，没有新的 <code>ws_400</code> 停机事件。</li>
+      </ul>
+
+      <h3>稳定性观察窗</h3>
+      <ul>
+        <li>重启约 111 秒后，两个账号仍保持在线。</li>
+        <li>QQ 出现 <code>SyncAll 结果(QQ): game_friends=4</code>，随后触发 <code>1002003</code> 风控休眠，说明业务循环已实际跑起来。</li>
+        <li>微信保持在线，无新的退出、掉线或坏回写。</li>
+      </ul>
+    </section>
+
+    <section class="card section">
+      <h2>问题分级</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>类别</th>
+            <th>状态</th>
+            <th>说明</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>QQ 登录缺少 UIN</td>
+            <td><span class="badge ok">已关闭</span></td>
+            <td>QQ 官方扫码路径已恢复，不再依赖 UIN 才能创建和使用二维码。</td>
+          </tr>
+          <tr>
+            <td>QQ 新码重启后失效</td>
+            <td><span class="badge ok">已关闭</span></td>
+            <td>账号 <code>1005</code> 在重新扫码后经过服务重启仍可登录，说明持久化与恢复链路已打通。</td>
+          </tr>
+          <tr>
+            <td>微信旧码导致 400</td>
+            <td><span class="badge ok">已缓解</span></td>
+            <td>通过自动续签自愈处理，服务重启后可自动恢复；当前真实账号已验证成功。</td>
+          </tr>
+          <tr>
+            <td>运行态假绿</td>
+            <td><span class="badge ok">已关闭</span></td>
+            <td>当前 <code>running</code> 与 <code>connected</code> 状态和真实链路一致，未再出现“显示运行但实际掉线”的情况。</td>
+          </tr>
+          <tr>
+            <td>QQ 风控 <code>1002003</code></td>
+            <td><span class="badge warn">仍存在</span></td>
+            <td>这是游戏服务器风控反馈，不是登录链路故障。当前策略是记录告警并进入休眠，建议后续通过频率和目标过滤进一步降低触发概率。</td>
+          </tr>
+          <tr>
+            <td>Redis 本地鉴权警告</td>
+            <td><span class="badge warn">环境项</span></td>
+            <td>本地 3000 实例仍处于 Redis 降级模式，可运行但未使用缓存。发布前如需启用缓存，需补全 Redis 密码配置。</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section class="card section">
+      <h2>优化建议</h2>
+      <ul>
+        <li>将 QQ 账号的好友巡回频率再下调一档，或把高风险好友加入过滤列表，降低 <code>1002003</code> 的触发概率。</li>
+        <li>把“业务风控休眠”和“认证失效停机”在前端状态上做更明显区分，避免运营误判成登录失败。</li>
+        <li>在发布前补一次 Redis 正常鉴权配置验证，这样部署后的缓存、会话和降级路径能完全一致。</li>
+        <li>等另一个线程同步结束后，先做一次合并态冒烟验证，再统一执行 git 提交、push、Docker 构建和镜像推送，避免重复发布。</li>
+        <li>推送完成后再对 README 里的一键部署和一键更新命令做最终核对，确保文档与最终发布分支完全一致。</li>
+      </ul>
+    </section>
+
+    <section class="card section">
+      <h2>发布前待办</h2>
+      <ol>
+        <li>等待另一个线程同步结束并确认无冲突改动。</li>
+        <li>在最终合并代码上做一次最小冒烟：登录、账号页、QQ 在线、微信在线、设置页加载。</li>
+        <li>确认 README 和 <code>scripts/deploy</code> 中的一键部署/更新命令仍与最终代码一致。</li>
+        <li>统一执行 git 提交、推送、Docker 镜像构建与推送。</li>
+        <li>在目标服务器再跑一次 <code>fresh-install.sh</code> 或 <code>update-app.sh</code> 做发布后验证。</li>
+      </ol>
+    </section>
+
+    <p class="foot">说明：本报告基于本地真实实例 <code>http://127.0.0.1:3000</code> 的实测数据生成。当前该实例仍在运行，进程为本轮重新拉起的验证实例。</p>
+  </div>
+</body>
+</html>

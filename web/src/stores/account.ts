@@ -1,23 +1,43 @@
-import { useStorage } from '@vueuse/core'
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import api from '@/api'
+import { currentAccountId } from '@/utils/auth'
 
 export interface Account {
   id: string
   name: string
   nick?: string
   uin?: number
+  username?: string
   avatar?: string
+  platform?: string
   running?: boolean
   connected?: boolean
   wsError?: any
   accountMode?: 'main' | 'alt' | 'safe'
+  effectiveMode?: 'main' | 'alt' | 'safe'
+  collaborationEnabled?: boolean
+  degradeReason?: string
+  degradeReasonLabel?: string
+  accountZone?: string
+  harvestDelay?: {
+    min: number
+    max: number
+  }
+  riskPromptEnabled?: boolean
+  modeScope?: {
+    zoneScope: string
+    requiresGameFriend: boolean
+    fallbackBehavior: string
+  }
   level?: number
   gold?: number
   exp?: number
   coupon?: number
   uptime?: number
+  lastLoginAt?: number | null
+  createdAt?: number
+  updatedAt?: number
   // Add other fields as discovered
 }
 
@@ -30,12 +50,11 @@ export interface AccountLog {
 
 export const useAccountStore = defineStore('account', () => {
   const accounts = ref<Account[]>([])
-  const currentAccountId = useStorage('current_account_id', '')
   const loading = ref(false)
   const logs = ref<AccountLog[]>([])
 
   const currentAccount = computed(() =>
-    accounts.value.find(a => String(a.id) === currentAccountId.value),
+    accounts.value.find(a => String(a.id || '') === String(currentAccountId.value || '')),
   )
 
   async function fetchAccounts() {
@@ -48,7 +67,7 @@ export const useAccountStore = defineStore('account', () => {
 
         // Auto-select first account if none selected or selected not found
         if (accounts.value.length > 0) {
-          const found = accounts.value.find(a => String(a.id) === currentAccountId.value)
+          const found = accounts.value.find(a => String(a.id || '') === String(currentAccountId.value || ''))
           if (!found && accounts.value[0]) {
             currentAccountId.value = String(accounts.value[0].id)
           }
@@ -64,26 +83,27 @@ export const useAccountStore = defineStore('account', () => {
   }
 
   function selectAccount(id: string) {
-    currentAccountId.value = id
+    currentAccountId.value = String(id || '').trim()
   }
 
   function setCurrentAccount(acc: Account) {
-    selectAccount(acc.id)
+    selectAccount(String(acc?.id || ''))
   }
 
   async function startAccount(id: string) {
-    await api.post(`/api/accounts/${id}/start`)
+    await api.post(`/api/accounts/${String(id || '').trim()}/start`)
     await fetchAccounts()
   }
 
   async function stopAccount(id: string) {
-    await api.post(`/api/accounts/${id}/stop`)
+    await api.post(`/api/accounts/${String(id || '').trim()}/stop`)
     await fetchAccounts()
   }
 
   async function deleteAccount(id: string) {
-    await api.delete(`/api/accounts/${id}`)
-    if (currentAccountId.value === id) {
+    const normalizedId = String(id || '').trim()
+    await api.delete(`/api/accounts/${normalizedId}`)
+    if (String(currentAccountId.value || '') === normalizedId) {
       currentAccountId.value = ''
     }
     await fetchAccounts()
@@ -115,7 +135,7 @@ export const useAccountStore = defineStore('account', () => {
   async function updateAccount(id: string, payload: any) {
     try {
       // core uses POST /api/accounts for both add and update (if id is present)
-      await api.post('/api/accounts', { ...payload, id })
+      await api.post('/api/accounts', { ...payload, id: String(id || '').trim() })
       await fetchAccounts()
     }
     catch (e) {
@@ -126,7 +146,7 @@ export const useAccountStore = defineStore('account', () => {
 
   async function updateAccountMode(id: string, mode: string) {
     try {
-      await api.post(`/api/accounts/${id}/mode`, { mode })
+      await api.post(`/api/accounts/${String(id || '').trim()}/mode`, { mode })
       await fetchAccounts()
     }
     catch (e) {
@@ -137,7 +157,7 @@ export const useAccountStore = defineStore('account', () => {
 
   async function applySafeModeBlacklist(id: string) {
     try {
-      const res = await api.post(`/api/accounts/${id}/safe-mode/apply-blacklist`)
+      const res = await api.post(`/api/accounts/${String(id || '').trim()}/safe-mode/apply-blacklist`)
       return res.data
     }
     catch (e) {

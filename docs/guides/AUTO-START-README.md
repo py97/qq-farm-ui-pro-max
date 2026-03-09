@@ -194,7 +194,7 @@ tail -f logs/ai-services-error.log
 
 ```javascript
 const CONFIG = {
-  openVikingPort: 5000,              // OpenViking 端口
+  openVikingPort: 5432,              // OpenViking 端口
   restartDelay: 3000,                // 重启延迟（毫秒）
   healthCheckInterval: 30000,        // 健康检查间隔（毫秒）
   maxRestarts: 5,                    // 最大重启次数
@@ -208,11 +208,20 @@ const CONFIG = {
 
 ```bash
 # OpenViking 服务地址
-OPENVIKING_URL=http://localhost:5000
+OPENVIKING_URL=http://localhost:5432
 
 # OpenViking 端口
-OPENVIKING_PORT=5000
+OPENVIKING_PORT=5432
+
+# 可选：允许 AI 服务启停和日志读取的额外工作目录（逗号 / 分号 / 换行分隔）
+AI_SERVICE_ALLOWED_CWDS=/absolute/workspace-one,/absolute/workspace-two
 ```
+
+### 目录白名单说明
+
+- 未显式传入 `cwd` 时，AI 服务默认只在当前项目根目录下启动、停止和读日志。
+- 传入 `--cwd`、`--project-root` 或调用 `/api/ai/*?cwd=...` 时，目录必须等于项目根目录，或出现在 `AI_SERVICE_ALLOWED_CWDS` 白名单中。
+- 目录存在但不在允许范围内时，HTTP 接口会返回 `400`，命令行启动器会直接拒绝执行并输出错误信息。
 
 ## 🎓 快速测试
 
@@ -234,8 +243,11 @@ pnpm start
 node ai-autostart.js status
 # 应显示：✅ AI 服务守护进程正在运行
 
+# 如果状态异常，直接输出诊断报告
+node ai-autostart.js doctor
+
 # 4. 检查 OpenViking 服务
-curl http://localhost:5000/health
+curl http://localhost:5432/health
 # 应返回：{"status":"healthy",...}
 ```
 
@@ -251,7 +263,7 @@ kill -9 <PID>
 # 3. 等待 5 秒
 
 # 4. 检查是否自动重启
-curl http://localhost:5000/health
+curl http://localhost:5432/health
 ```
 
 ## 🌐 开机自启动
@@ -338,32 +350,51 @@ node ai-autostart.js start
 
 **查看错误：**
 ```bash
-tail -f logs/ai-services-error.log
+tail -f logs/ai-services.log
 ```
 
 **常见原因：**
 - Python 虚拟环境问题
 - 依赖未安装
-- 端口被占用
+- `5432` 被已有 OpenViking / PostgreSQL / 残留实例占用
+- `8080` 被残留 AGFS 实例占用
 
 **解决方法：**
 ```bash
-cd openviking-service
+cd services/openviking
 python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
+```
+
+**优先检查状态：**
+```bash
+node scripts/service/ai-autostart.js status --cwd .
+# 可能出现：
+# - ✅ 守护模式
+# - ⚠️ 外部实例模式
+# - ⚠️ 残留实例/端口冲突
+# - ❌ 未运行
+
+node scripts/service/ai-autostart.js doctor --cwd .
+# 会额外输出：
+# - 当前运行模式（managed / external / conflict / offline）
+# - PID 文件是否 stale
+# - 5432 / 8080 的监听进程
+# - 最近日志和建议操作
 ```
 
 ### 问题 3：无法访问服务
 
 **检查健康状态：**
 ```bash
-curl http://localhost:5000/health
+curl http://localhost:5432/health
 ```
 
-**查看进程：**
+**查看端口占用：**
 ```bash
-ps aux | grep "python.*app.py"
+lsof -nP -iTCP:5432 -sTCP:LISTEN
+lsof -nP -iTCP:8080 -sTCP:LISTEN
 ```
 
 ## ✨ 特性总结

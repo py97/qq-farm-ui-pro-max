@@ -1,0 +1,306 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>全局主题统一框架计划（JeecgBoot 策略对齐版）</title>
+  <style>
+    :root {
+      --bg: #f6f8fc;
+      --card: #ffffff;
+      --text: #1f2937;
+      --muted: #4b5563;
+      --line: #e5e7eb;
+      --primary: #2563eb;
+      --ok: #059669;
+      --warn: #d97706;
+      --risk: #dc2626;
+      --mono-bg: #0b1220;
+      --mono-text: #e5e7eb;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+      color: var(--text);
+      background: linear-gradient(180deg, #f8fafc 0%, #f3f6fb 100%);
+      line-height: 1.6;
+    }
+    .wrap {
+      max-width: 1120px;
+      margin: 0 auto;
+      padding: 28px 20px 64px;
+    }
+    h1 { font-size: 28px; margin: 0 0 8px; }
+    h2 {
+      font-size: 20px;
+      margin: 28px 0 12px;
+      padding-left: 10px;
+      border-left: 4px solid var(--primary);
+    }
+    h3 { font-size: 16px; margin: 16px 0 8px; }
+    p { margin: 8px 0; color: var(--muted); }
+    .meta {
+      background: #eef2ff;
+      border: 1px solid #c7d2fe;
+      border-radius: 10px;
+      padding: 12px 14px;
+      color: #3730a3;
+      font-size: 14px;
+    }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 14px 16px;
+      margin-top: 10px;
+    }
+    .grid {
+      display: grid;
+      gap: 12px;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    @media (max-width: 860px) {
+      .grid { grid-template-columns: 1fr; }
+    }
+    ul, ol { margin: 8px 0 8px 22px; }
+    li { margin: 4px 0; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 14px;
+      margin-top: 8px;
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    th, td {
+      border-bottom: 1px solid var(--line);
+      padding: 10px 10px;
+      vertical-align: top;
+      text-align: left;
+    }
+    th { background: #f8fafc; }
+    .tag {
+      display: inline-block;
+      border-radius: 999px;
+      padding: 2px 10px;
+      font-size: 12px;
+      line-height: 20px;
+      margin-right: 6px;
+      border: 1px solid transparent;
+    }
+    .tag-ok { color: #065f46; background: #ecfdf5; border-color: #a7f3d0; }
+    .tag-warn { color: #92400e; background: #fffbeb; border-color: #fcd34d; }
+    .tag-risk { color: #991b1b; background: #fef2f2; border-color: #fecaca; }
+    .mono {
+      background: var(--mono-bg);
+      color: var(--mono-text);
+      border-radius: 10px;
+      padding: 12px;
+      overflow-x: auto;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+    .kpi {
+      display: grid;
+      gap: 10px;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      margin-top: 8px;
+    }
+    .kpi .item {
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 12px;
+    }
+    .kpi b { font-size: 20px; }
+    .foot {
+      margin-top: 24px;
+      padding: 10px 12px;
+      border-left: 4px solid #0ea5e9;
+      background: #f0f9ff;
+      color: #0c4a6e;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>全局主题统一框架计划（JeecgBoot 策略对齐版）</h1>
+    <div class="meta">
+      目标：仅做 UI 主题体系重构，不改业务逻辑与功能行为；尽量复用现有主题逻辑，走“最小侵入、可回滚、分阶段”方案。
+    </div>
+
+    <h2>1. 参考基线与当前现状</h2>
+    <div class="grid">
+      <div class="card">
+        <h3>JeecgBoot 主题策略（可迁移部分）</h3>
+        <ul>
+          <li><b>中心化配置</b>：`projectSetting + appStore` 做单一主题状态源。</li>
+          <li><b>分层处理器</b>：`initAppConfig` 初始化，`handler` 负责设置项事件，`theme/*` 负责 CSS 变量与暗黑适配。</li>
+          <li><b>颜色白名单</b>：系统主题/顶栏/菜单各自独立色板，避免任意色导致可读性问题。</li>
+          <li><b>模式联动</b>：暗黑模式切换时，限制/重算部分颜色，保证对比度。</li>
+          <li><b>能力开关</b>：灰色模式、色弱模式作为全局开关独立存在。</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>你当前项目（web）主题现状</h3>
+        <ul>
+          <li>已有 `app` store 与 `ThemeSettingDrawer`，具备主题模式、色板、背景联动基础。</li>
+          <li>存在大量页面级配色类和硬编码，语义色未统一，主题切换影响范围受限。</li>
+          <li>主题 token 主要在 `style.css`，但组件侧未统一通过语义 token 消费。</li>
+          <li>布局层（`DefaultLayout.vue`）已有玻璃态变量，但和页面内局部色彩体系未闭环。</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="kpi">
+      <div class="item"><div>扫描结果 1</div><b>210</b><div>处十六进制颜色引用</div></div>
+      <div class="item"><div>扫描结果 2</div><b>807</b><div>处颜色类（text/bg/border）引用</div></div>
+      <div class="item"><div>扫描结果 3</div><b>745</b><div>处 `dark:` 相关样式引用</div></div>
+    </div>
+
+    <h2>2. 改造原则（严格约束）</h2>
+    <div class="card">
+      <p><span class="tag tag-ok">必须满足</span>仅 UI 主题改造，不动接口、数据流、权限、路由、业务计算逻辑。</p>
+      <p><span class="tag tag-ok">必须满足</span>保留现有主题行为（light/dark/auto、色板切换、背景联动、性能模式）。</p>
+      <p><span class="tag tag-ok">必须满足</span>优先“加层”而不是“重写”，通过兼容层让旧样式逐步迁移。</p>
+      <p><span class="tag tag-warn">控制变更</span>先建立全局 token 与映射，再按优先级替换高频页面，避免一次性全量重构。</p>
+    </div>
+
+    <h2>3. 新版全局主题控制方案（设计稿）</h2>
+    <div class="card">
+      <h3>3.1 分层模型（与 Jeecg 对齐）</h3>
+      <ol>
+        <li><b>ThemeState 层</b>：继续由 `stores/app.ts` 管理模式、主题、背景、可访问性开关。</li>
+        <li><b>ThemeEngine 层</b>：新增主题处理器（初始化、切换、变量落地、联动规则）。</li>
+        <li><b>ThemeToken 层</b>：统一定义语义 token，输出到 CSS 变量。</li>
+        <li><b>ThemeAdapter 层</b>：给现有 `.glass-*`、`text-primary-*`、页面常用色提供兼容映射。</li>
+        <li><b>ThemeUI 层</b>：设置抽屉按“系统主题/顶栏主题/菜单主题/界面设置”结构组织。</li>
+      </ol>
+
+      <h3>3.2 Token 结构（语义化，不绑具体组件）</h3>
+      <div class="mono">
+Core Tokens:
+  --t-primary-50..950
+  --t-neutral-0..1000
+
+Semantic Tokens:
+  --t-bg-page / --t-bg-elevated / --t-bg-overlay
+  --t-text-main / --t-text-secondary / --t-text-inverse
+  --t-border-default / --t-border-strong
+  --t-brand / --t-brand-hover / --t-brand-active
+  --t-success / --t-warning / --t-danger / --t-info
+  --t-focus-ring / --t-shadow-sm/md/lg
+
+Layout Tokens:
+  --t-header-bg / --t-header-text
+  --t-sider-bg / --t-sider-text / --t-sider-active
+  --t-content-bg
+
+Effect Tokens:
+  --t-glass-bg / --t-glass-border / --t-glass-blur
+  --t-mesh-orb-1/2/3
+      </div>
+
+      <h3>3.3 主题策略</h3>
+      <ul>
+        <li><b>系统主题（5 套）</b>：保留现有 default/cyber/elegant/ocean/sakura。</li>
+        <li><b>顶栏主题（白名单）</b>：对齐 Jeecg 的 Header 色板做有限集合。</li>
+        <li><b>菜单主题（白名单）</b>：对齐 Jeecg 的 Sidebar 色板，深色模式下限制切换策略。</li>
+        <li><b>模式联动</b>：`dark` 下自动计算 hover/active/边框层级并保证可读性。</li>
+        <li><b>可访问性</b>：灰色模式、色弱模式独立开关，挂在根节点 class。</li>
+      </ul>
+    </div>
+
+    <h2>4. 最小改动实施计划（Plan）</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>阶段</th>
+          <th>目标</th>
+          <th>改动范围</th>
+          <th>对业务风险</th>
+          <th>验收点</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Phase 0</td>
+          <td>主题资产盘点与冻结基线</td>
+          <td>仅扫描与文档，不改代码</td>
+          <td><span class="tag tag-ok">无</span></td>
+          <td>输出映射表：现有 class/变量 -> 新 token</td>
+        </tr>
+        <tr>
+          <td>Phase 1</td>
+          <td>建立 ThemeEngine 与 Token Registry</td>
+          <td>新增主题管理文件，复用现有 `appStore` 状态</td>
+          <td><span class="tag tag-low">低</span></td>
+          <td>light/dark/auto + colorTheme 与当前行为一致</td>
+        </tr>
+        <tr>
+          <td>Phase 2</td>
+          <td>加入兼容层（旧类到新 token）</td>
+          <td>`style.css`/布局样式映射，不改业务组件逻辑</td>
+          <td><span class="tag tag-low">低</span></td>
+          <td>页面视觉基本不变，主题切换覆盖范围扩大</td>
+        </tr>
+        <tr>
+          <td>Phase 3</td>
+          <td>设置面板重组为 Jeecg 风格策略面板</td>
+          <td>仅 UI 配置项与展示结构，保留原动作接口</td>
+          <td><span class="tag tag-warn">中低</span></td>
+          <td>包含：系统主题/顶栏主题/菜单主题/界面设置</td>
+        </tr>
+        <tr>
+          <td>Phase 4</td>
+          <td>高频页面渐进替换硬编码色彩</td>
+          <td>优先 Settings/Accounts/Dashboard/Friends</td>
+          <td><span class="tag tag-warn">中</span></td>
+          <td>替换为语义 token，UI 无功能回归</td>
+        </tr>
+        <tr>
+          <td>Phase 5</td>
+          <td>回归与对比度校验</td>
+          <td>视觉回归脚本 + 手工场景清单</td>
+          <td><span class="tag tag-ok">可控</span></td>
+          <td>主题切换、暗黑/浅色、灰色/色弱全部通过</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h2>5. 关键设计决策（与你当前代码对齐）</h2>
+    <div class="card">
+      <ol>
+        <li>不替换 `stores/app.ts` 的现有数据结构，只补充“主题处理器函数”并在 watch 链接入。</li>
+        <li>不改变现有 API（`/api/settings/theme`）字段协议，新增字段采用可选方式向下兼容。</li>
+        <li>`style.css` 继续作为全局主题变量承载层，但升级为“Core + Semantic + Layout + Effect”结构。</li>
+        <li>对现有 `.glass-panel/.glass-text-*` 保持兼容，先接 token，不强制页面立即改 class。</li>
+        <li>设置抽屉保留现有交互入口和持久化，只重排信息架构与视觉层级。</li>
+      </ol>
+    </div>
+
+    <h2>6. 风险与回滚</h2>
+    <div class="card">
+      <ul>
+        <li><span class="tag tag-risk">风险</span>页面局部硬编码颜色过多，部分状态色在主题切换下可能对比度不足。</li>
+        <li><span class="tag tag-risk">风险</span>图表/第三方组件可能仍使用固定色，需要单独 token 接入。</li>
+        <li><span class="tag tag-ok">回滚</span>按 Phase 提交，任一阶段可独立回退，不影响业务逻辑。</li>
+      </ul>
+    </div>
+
+    <h2>7. 本次输出结论</h2>
+    <div class="card">
+      <p>这份 plan 采用了 Jeecg 的“中心化配置 + 处理器分层 + 色板白名单 + 全局变量落地”策略，并结合你现有主题代码做了最小改动路径设计。</p>
+      <p>如果你确认，我下一步会按此 plan 进入 <b>Phase 1（仅主题框架层）</b> 的具体实施，不触碰业务逻辑与功能流程。</p>
+    </div>
+
+    <div class="foot">
+      报告文件：/Volumes/My Shared Files/AllFiles/Users/smdk000/文稿/qq/qq-farm-bot-ui-main_副本/docs/theme-global-plan-jeecg-aligned.html
+    </div>
+  </div>
+</body>
+</html>

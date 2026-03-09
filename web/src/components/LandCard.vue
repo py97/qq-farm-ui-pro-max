@@ -6,6 +6,16 @@ const props = defineProps<{
 }>()
 
 const land = computed(() => props.land)
+const plantSize = computed(() => Number(land.value?.plantSize || 1))
+const isMultiPlant = computed(() => plantSize.value > 1)
+const occupiedByMaster = computed(() => !!land.value?.occupiedByMaster)
+const seasonText = computed(() => {
+  const current = Number(land.value?.currentSeason || 0)
+  const total = Number(land.value?.totalSeason || 0)
+  if (current <= 0 || total <= 0)
+    return ''
+  return `${current}/${total}季`
+})
 
 function getLandStatusClass(land: any) {
   const status = land.status
@@ -82,6 +92,22 @@ function getLandTypeName(level: number) {
     class="relative min-h-[140px] flex flex-col items-center border rounded-lg p-2 transition dark:border-white/10 hover:shadow-md"
     :class="getLandStatusClass(land)"
   >
+    <div class="absolute right-1 top-1 flex gap-1 text-[9px]">
+      <span
+        v-if="isMultiPlant"
+        class="rounded bg-emerald-100 px-1 text-emerald-700 font-semibold dark:bg-emerald-900/35 dark:text-emerald-300"
+      >
+        合种{{ plantSize }}x{{ plantSize }}
+      </span>
+      <span
+        v-if="occupiedByMaster"
+        class="rounded bg-cyan-100 px-1 text-cyan-700 font-semibold dark:bg-cyan-900/35 dark:text-cyan-300"
+        :title="`由主地块 #${land.masterLandId || '-'} 占用`"
+      >
+        副地块
+      </span>
+    </div>
+
     <div class="absolute left-1 top-1 text-[10px] text-gray-400 font-mono">
       #{{ land.id }}
     </div>
@@ -112,6 +138,10 @@ function getLandTypeName(level: number) {
 
     <div class="glass-text-muted mb-1 text-[10px]">
       {{ getLandTypeName(land.level) }}
+    </div>
+
+    <div v-if="seasonText" class="glass-text-muted mb-1 rounded bg-black/5 px-1.5 py-0.5 text-[10px] dark:bg-white/10">
+      {{ seasonText }}
     </div>
 
     <!-- Status Badges -->

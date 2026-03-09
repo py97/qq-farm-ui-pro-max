@@ -1,6 +1,41 @@
 const { sleep } = require('../utils/utils');
 const QRCode = require('qrcode');
 
+function buildTemplateContext(payload, title, content) {
+    const now = new Date();
+    return {
+        accountId: String(payload.accountId || ''),
+        accountName: String(payload.accountName || ''),
+        title: String(title || ''),
+        content: String(content || ''),
+        reason: String(payload.reason || ''),
+        offlineMs: Number(payload.offlineMs || 0),
+        timestamp: now.getTime(),
+        isoTime: now.toISOString(),
+    };
+}
+
+function renderTemplate(text, context) {
+    return String(text || '').replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, (_, key) => {
+        const value = context[key];
+        if (value === undefined || value === null) return '';
+        if (typeof value === 'object') return JSON.stringify(value);
+        return String(value);
+    });
+}
+
+function buildCustomWebhookBody(cfg, payload, title, content) {
+    if (!cfg || !cfg.webhookCustomJsonEnabled) return null;
+    const template = String(cfg.webhookCustomJsonTemplate || '').trim();
+    if (!template) return null;
+    const rendered = renderTemplate(template, buildTemplateContext(payload, title, content));
+    try {
+        return JSON.parse(rendered);
+    } catch {
+        return null;
+    }
+}
+
 function createReloginReminderService(options) {
     const {
         store,
@@ -18,6 +53,7 @@ function createReloginReminderService(options) {
 
     function getOfflineAutoDeleteMs() {
         const cfg = store.getOfflineReminder ? store.getOfflineReminder() : null;
+        if (!cfg || !cfg.offlineDeleteEnabled) return 0;
         const sec = Number.parseInt(cfg && cfg.offlineDeleteSec, 10) || 0;
         return sec * 1000;
     }
@@ -214,6 +250,9 @@ function createReloginReminderService(options) {
                 token,
                 title,
                 content,
+                webhookBody: channel === 'webhook'
+                    ? buildCustomWebhookBody(cfg, payload, title, content)
+                    : null,
             });
 
             if (ret && ret.ok) {

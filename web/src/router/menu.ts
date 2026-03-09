@@ -96,6 +96,14 @@ export const menuRoutes: MenuItem[] = [
     adminOnly: true,
   },
   {
+    path: 'account-ownership',
+    name: 'account-ownership',
+    label: '账号归属',
+    icon: 'i-carbon-user-role',
+    component: () => import('@/views/AccountOwnership.vue'),
+    adminOnly: true,
+  },
+  {
     path: 'cards',
     name: 'cards',
     label: '卡密',

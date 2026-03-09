@@ -36,6 +36,29 @@ function normalizeIconLookupKey(value) {
         .toLowerCase();
 }
 
+function getIconLookupKeys(value) {
+    const raw = String(value || '')
+        .replace(/\/spriteFrame$/i, '')
+        .replace(IMAGE_EXT_RE, '')
+        .trim();
+    if (!raw) return [];
+
+    const keys = [];
+    const addKey = (candidate) => {
+        const normalized = normalizeIconLookupKey(candidate);
+        if (normalized && !keys.includes(normalized)) {
+            keys.push(normalized);
+        }
+    };
+
+    addKey(raw);
+    const segments = raw.split('/').filter(Boolean);
+    if (segments.length > 0) {
+        addKey(segments[segments.length - 1]);
+    }
+    return keys;
+}
+
 function toStaticGameConfigUrl(fullPath) {
     const relPath = path.relative(getResourcePath('gameConfig'), fullPath);
     const safePath = relPath.split(path.sep).map(seg => encodeURIComponent(seg)).join('/');
@@ -437,13 +460,11 @@ function getItemImageById(itemId) {
         if (direct) return direct;
         const item = itemInfoMap.get(targetId);
         if (!item) return '';
-        const iconKey = normalizeIconLookupKey(item.icon_res);
-        if (iconKey) {
+        for (const iconKey of getIconLookupKeys(item.icon_res)) {
             const mapped = itemIconKeyImageMap.get(iconKey);
             if (mapped) return mapped;
         }
-        const assetKey = normalizeIconLookupKey(item.asset_name);
-        if (assetKey) {
+        for (const assetKey of getIconLookupKeys(item.asset_name)) {
             const mapped = itemIconKeyImageMap.get(assetKey);
             if (mapped) return mapped;
         }

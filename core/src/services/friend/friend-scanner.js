@@ -1,14 +1,13 @@
 
 const { CONFIG, PlantPhase, PHASE_NAMES } = require('../../config/config');
 const { getPlantName, getPlantById, getSeedImageBySeedId } = require('../../config/gameConfig');
-const { isAutomationOn, getFriendQuietHours, getFriendBlacklist, setFriendBlacklist, getStealFilterConfig, getStealFriendFilterConfig, getStakeoutStealConfig, getConfigSnapshot } = require('../../models/store');
-const { sendMsgAsync, sendMsgAsyncUrgent, getUserState, networkEvents } = require('../../utils/network');
-const { types } = require('../../utils/proto');
+const { isAutomationOn, getFriendBlacklist, getStakeoutStealConfig } = require('../../models/store');
+const { getUserState, networkEvents } = require('../../utils/network');
 const { toLong, toNum, toTimeSec, getServerTimeSec, log, logWarn, sleep } = require('../../utils/utils');
 const { getCurrentPhase, setOperationLimitsCallback } = require('../farm');
 const { recordOperation } = require('../stats');
 const { sellAllFruits } = require('../warehouse');
-const { getPool } = require('../mysql-db');
+const { getRuntimeAccountModePolicy } = require('../account-mode-policy');
 const PlatformFactory = require('../../platform/PlatformFactory');
 const state = require('./friend-state');
 const decision = require('./friend-decision');
@@ -58,6 +57,31 @@ function _logPeriodicStatus(cacheKey, message, options = {}) {
 
 function _clearPeriodicStatus(...keys) {
     keys.forEach(key => _periodicStatusLogCache.delete(key));
+}
+
+function _logModeScopePolicy(policy) {
+    if (!policy || policy.collaborationEnabled || !policy.degradeReason) {
+        _clearPeriodicStatus('friend_mode_scope');
+        return;
+    }
+
+    const reasonLabel = policy.degradeReasonLabel || policy.degradeReason;
+    const isStrictBlock = policy.fallbackBehavior === 'strict_block';
+    const message = isStrictBlock
+        ? `账号模式作用范围未命中: ${reasonLabel}，好友模块已按 ${policy.effectiveMode || 'safe'} 模式保守执行`
+        : `账号模式作用范围未命中: ${reasonLabel}，好友模块按独立账号继续执行`;
+
+    _logPeriodicStatus('friend_mode_scope', message, {
+        level: isStrictBlock ? 'warn' : 'info',
+        stateValue: `${policy.fallbackBehavior}:${policy.effectiveMode}:${policy.degradeReason}`,
+        meta: {
+            module: 'friend',
+            event: 'mode_scope',
+            result: policy.collaborationEnabled ? 'in_scope' : 'standalone',
+            effectiveMode: policy.effectiveMode || policy.accountMode || 'main',
+            degradeReason: policy.degradeReason,
+        },
+    });
 }
 
 async function scanAndClassifyFriends(friends, state) {
@@ -479,8 +503,9 @@ async function runBatchWithFallback(ids, batchFn, singleFn) {
 }
 
 
-async function visitFriend(friend, totalActions, myGid) {
+async function visitFriend(friend, totalActions, myGid, modePolicy = null) {
     const { gid, name } = friend;
+    const effectiveMode = String((modePolicy && modePolicy.effectiveMode) || 'main').trim().toLowerCase() || 'main';
 
     let enterReply;
     try {
@@ -542,7 +567,7 @@ async function visitFriend(friend, totalActions, myGid) {
     }
 
     // 2. 偷菜操作
-    if (isAutomationOn('friend_steal') && status.stealable.length > 0) {
+    if (effectiveMode !== 'safe' && isAutomationOn('friend_steal') && status.stealable.length > 0) {
         const precheck = await actions.checkCanOperateRemote(gid, 10008);
         if (precheck.canOperate) {
             const canStealNum = precheck.canStealNum > 0 ? precheck.canStealNum : status.stealable.length;
@@ -580,7 +605,7 @@ async function visitFriend(friend, totalActions, myGid) {
     }
 
     // 3. 捣乱操作 (放虫/放草)
-    const autoBad = isAutomationOn('friend_bad');
+    const autoBad = effectiveMode !== 'safe' && isAutomationOn('friend_bad');
     if (autoBad) {
         if (status.canPutBug.length > 0 && actions.canOperate(10004)) {
             const remaining = actions.getRemainingTimes(10004);
@@ -639,12 +664,19 @@ async function checkFriends(mode = 'full') {
     if (!isAutomationOn('friend')) return false;
 
     const normalizedMode = new Set(['full', 'help', 'steal']).has(String(mode || '')) ? String(mode) : 'full';
+    const modePolicy = getRuntimeAccountModePolicy();
+    const effectiveMode = String(modePolicy.effectiveMode || modePolicy.accountMode || 'main').trim().toLowerCase() || 'main';
+    _logModeScopePolicy(modePolicy);
     const baseHelpEnabled = !!isAutomationOn('friend_help');
     const baseStealEnabled = !!isAutomationOn('friend_steal');
     const baseBadEnabled = !!isAutomationOn('friend_bad');
     const helpEnabled = normalizedMode === 'steal' ? false : baseHelpEnabled;
     let stealEnabled = normalizedMode === 'help' ? false : baseStealEnabled;
-    const badEnabled = normalizedMode === 'help' ? baseBadEnabled : false;
+    let badEnabled = normalizedMode === 'help' ? baseBadEnabled : false;
+    if (effectiveMode === 'safe') {
+        stealEnabled = false;
+        badEnabled = false;
+    }
 
     const platformInst = PlatformFactory.createPlatform(CONFIG.platform);
 
@@ -677,7 +709,7 @@ async function checkFriends(mode = 'full') {
         // 三阶段模式：扫描→偷菜→帮助（通过 friend_three_phase 开关控制）
         const useThreePhase = normalizedMode === 'full' && !!isAutomationOn('friend_three_phase');
         if (useThreePhase && stealEnabled) {
-            return await checkFriendsThreePhase(friends, state, helpEnabled, badEnabled);
+            return await checkFriendsThreePhase(friends, state, helpEnabled, badEnabled, modePolicy);
         }
 
         // 原有逐个遍历模式
@@ -765,7 +797,7 @@ async function checkFriends(mode = 'full') {
             }
 
             try {
-                await visitFriend(friend, totalActions, state.gid);
+                await visitFriend(friend, totalActions, state.gid, modePolicy);
             } catch {
                 // 单个好友访问失败不影响整体
             }
@@ -797,7 +829,7 @@ async function checkFriends(mode = 'full') {
 
         if (summary.length > 0) {
             log('好友', `巡查 ${friendsToVisit.length} 人 → ${summary.join('/')}`, {
-                module: 'friend', event: 'friend_cycle', result: 'ok', visited: friendsToVisit.length, summary, mode: normalizedMode
+                module: 'friend', event: 'friend_cycle', result: 'ok', visited: friendsToVisit.length, summary, mode: normalizedMode, effectiveMode
             });
         }
         consecutiveErrors = 0; // 完成所有判定，视为正常操作
@@ -818,17 +850,13 @@ async function checkFriends(mode = 'full') {
     }
 }
 
-async function checkFriendsThreePhase(friends, state, helpEnabled, badEnabled) {
-    const fullCfg = getConfigSnapshot() || {};
-    const accountMode = fullCfg.accountMode || 'main';
-
-    // 如果是 safe 模式，强制关闭捣乱
-    let actualBadEnabled = badEnabled;
-    if (accountMode === 'safe') {
-        actualBadEnabled = false;
-    }
+async function checkFriendsThreePhase(friends, state, helpEnabled, badEnabled, modePolicy = null) {
+    const effectiveMode = String((modePolicy && modePolicy.effectiveMode) || 'main').trim().toLowerCase() || 'main';
+    const actualBadEnabled = effectiveMode === 'safe' ? false : badEnabled;
+    const actualHelpEnabled = helpEnabled;
+    const actualStealEnabled = effectiveMode === 'safe' ? false : true;
     log('好友', '开始三阶段巡查: 扫描→偷菜→帮助', {
-        module: 'friend', event: 'three_phase_start', result: 'ok',
+        module: 'friend', event: 'three_phase_start', result: 'ok', effectiveMode,
     });
 
     const { stealFriends, helpFriends, otherFriends } = await scanAndClassifyFriends(friends, state);
@@ -840,7 +868,7 @@ async function checkFriendsThreePhase(friends, state, helpEnabled, badEnabled) {
 
     const totalActions = { steal: 0, water: 0, weed: 0, bug: 0, putBug: 0, putWeed: 0 };
 
-    if (stealFriends.length > 0) {
+    if (actualStealEnabled && stealFriends.length > 0) {
         totalActions.steal = await batchStealFromFriends(stealFriends, state.gid);
     }
 
@@ -853,7 +881,7 @@ async function checkFriendsThreePhase(friends, state, helpEnabled, badEnabled) {
         } catch { /* ignore */ }
     }
 
-    if (helpEnabled && helpFriends.length > 0) {
+    if (actualHelpEnabled && helpFriends.length > 0) {
         const helpResult = await batchHelpFriends(helpFriends, state.gid);
         totalActions.water = helpResult.water;
         totalActions.weed = helpResult.weed;
@@ -864,7 +892,7 @@ async function checkFriendsThreePhase(friends, state, helpEnabled, badEnabled) {
         const canPutBugOrWeed = actions.canOperate(10004) || actions.canOperate(10003);
         if (canPutBugOrWeed) {
             for (const friend of otherFriends.slice(0, 5)) {
-                try { await visitFriend(friend, totalActions, state.gid); } catch { /* ignore */ }
+                try { await visitFriend(friend, totalActions, state.gid, modePolicy); } catch { /* ignore */ }
                 await sleep(1000 + Math.floor(Math.random() * 3000));
             }
         }
@@ -879,7 +907,7 @@ async function checkFriendsThreePhase(friends, state, helpEnabled, badEnabled) {
     const visitedTotal = stealFriends.length + helpFriends.length;
     if (summary.length > 0) {
         log('好友', `三阶段巡查 ${visitedTotal} 人 → ${summary.join('/')}`, {
-            module: 'friend', event: 'friend_cycle', result: 'ok', visited: visitedTotal, summary, mode: 'three_phase',
+            module: 'friend', event: 'friend_cycle', result: 'ok', visited: visitedTotal, summary, mode: 'three_phase', effectiveMode,
         });
     }
     consecutiveErrors = 0;

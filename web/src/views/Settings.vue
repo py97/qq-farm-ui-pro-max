@@ -690,10 +690,217 @@ watch(() => appStore.loginBackground, (value) => {
   img.src = nextUrl
 }, { immediate: true })
 
+const currentAccountSnapshot = computed(() => {
+  return accounts.value.find((a: any) => String(a.id || '') === String(currentAccountId.value || '')) as any || null
+})
+
 const currentAccountName = computed(() => {
-  const acc = accounts.value.find((a: any) => String(a.id || '') === String(currentAccountId.value || ''))
+  const acc = currentAccountSnapshot.value
   return acc ? (acc.name || acc.nick || acc.id) : null
 })
+
+const defaultModeScope = {
+  zoneScope: 'same_zone_only',
+  requiresGameFriend: true,
+  fallbackBehavior: 'standalone',
+}
+
+function resolveAccountZone(rawPlatform: any) {
+  const platform = String(rawPlatform || '').trim().toLowerCase()
+  if (platform === 'qq')
+    return 'qq_zone'
+  if (platform.startsWith('wx'))
+    return 'wechat_zone'
+  return 'unknown_zone'
+}
+
+function getAccountZoneLabel(zone: string) {
+  if (zone === 'qq_zone')
+    return 'QQ区'
+  if (zone === 'wechat_zone')
+    return '微信区'
+  return '未识别区服'
+}
+
+const currentAccountZoneLabel = computed(() => {
+  return getAccountZoneLabel(resolveAccountZone(currentAccountSnapshot.value?.platform))
+})
+
+function buildNormalizedModeScope(rawScope: any) {
+  return {
+    ...defaultModeScope,
+    ...(rawScope || {}),
+    zoneScope: String(rawScope?.zoneScope || defaultModeScope.zoneScope),
+    requiresGameFriend: rawScope?.requiresGameFriend !== false,
+    fallbackBehavior: String(rawScope?.fallbackBehavior || defaultModeScope.fallbackBehavior),
+  }
+}
+
+function resolveAccountMode(rawMode: any): 'main' | 'alt' | 'safe' {
+  if (rawMode === 'alt' || rawMode === 'safe')
+    return rawMode
+  return 'main'
+}
+
+function resolveModeMeta(mode?: string) {
+  if (mode === 'alt') {
+    return {
+      label: '小号',
+      badge: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300',
+    }
+  }
+  if (mode === 'safe') {
+    return {
+      label: '避险',
+      badge: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300',
+    }
+  }
+  return {
+    label: '主号',
+    badge: 'bg-primary-100 text-primary-700 dark:bg-primary-900/40 dark:text-primary-300',
+  }
+}
+
+function resolveEffectiveMode(rawMode: any): 'main' | 'alt' | 'safe' {
+  if (rawMode === 'alt' || rawMode === 'safe')
+    return rawMode
+  return 'main'
+}
+
+function resolveDegradeReasonLabel(reason?: string) {
+  const raw = String(reason || '').trim()
+  if (raw === 'missing_mode_peer')
+    return '未找到可协同的对端账号'
+  if (raw === 'cross_zone_peer_only')
+    return '仅存在跨区账号，未命中同区约束'
+  if (raw === 'friend_relation_unknown')
+    return '好友关系尚未完成预热'
+  if (raw === 'not_game_friend')
+    return '同 owner 对端账号不是游戏好友'
+  return ''
+}
+
+function resolveNumberWithFallback(value: any, fallback: number) {
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : fallback
+}
+
+function getCurrentAccountBaseline() {
+  const currentSettings = settings.value as any
+  const acc = currentAccountSnapshot.value
+  const rawHarvestDelay = acc?.harvestDelay || {}
+  return {
+    accountMode: resolveAccountMode(currentSettings?.accountMode || acc?.accountMode || acc?.account_mode),
+    harvestDelay: {
+      min: resolveNumberWithFallback(currentSettings?.harvestDelay?.min ?? rawHarvestDelay.min ?? acc?.harvest_delay_min, 0),
+      max: resolveNumberWithFallback(currentSettings?.harvestDelay?.max ?? rawHarvestDelay.max ?? acc?.harvest_delay_max, 0),
+    },
+    riskPromptEnabled: currentSettings?.riskPromptEnabled !== false,
+    modeScope: buildNormalizedModeScope(currentSettings?.modeScope),
+  }
+}
+
+function buildNormalizedTradeConfig(rawTradeConfig: any) {
+  const sellConfig = ((rawTradeConfig || {}).sell || {}) as any
+  const rareKeepConfig = (sellConfig.rareKeep || {}) as any
+  return {
+    sell: {
+      ...defaultTradeConfig.sell,
+      ...sellConfig,
+      keepFruitIds: Array.isArray(sellConfig.keepFruitIds) ? [...sellConfig.keepFruitIds] : [],
+      rareKeep: {
+        ...defaultTradeConfig.sell.rareKeep,
+        ...rareKeepConfig,
+      },
+    },
+  }
+}
+
+function buildNormalizedAutomationConfig(rawAutomation: any) {
+  return {
+    ...defaultAutomationConfig,
+    ...(rawAutomation || {}),
+    stealFilterPlantIds: Array.isArray(rawAutomation?.stealFilterPlantIds) ? [...rawAutomation.stealFilterPlantIds] : [],
+    stealFriendFilterIds: Array.isArray(rawAutomation?.stealFriendFilterIds) ? [...rawAutomation.stealFriendFilterIds] : [],
+  }
+}
+
+function buildAccountSettingsStateFromSources() {
+  const currentSettings = settings.value as any
+  const accountBaseline = getCurrentAccountBaseline()
+  return {
+    accountMode: accountBaseline.accountMode,
+    harvestDelay: accountBaseline.harvestDelay,
+    riskPromptEnabled: accountBaseline.riskPromptEnabled,
+    modeScope: accountBaseline.modeScope,
+    plantingStrategy: currentSettings?.plantingStrategy || 'preferred',
+    plantingFallbackStrategy: currentSettings?.plantingFallbackStrategy || 'level',
+    preferredSeedId: currentSettings?.preferredSeedId || 0,
+    inventoryPlanting: buildNormalizedInventoryPlantingConfig(currentSettings?.inventoryPlanting),
+    intervals: {
+      ...defaultIntervals,
+      ...(currentSettings?.intervals || {}),
+    },
+    friendQuietHours: {
+      ...defaultFriendQuietHours,
+      ...(currentSettings?.friendQuietHours || {}),
+    },
+    stakeoutSteal: {
+      ...defaultStakeoutSteal,
+      ...((currentSettings?.stakeoutSteal) || {}),
+    },
+    tradeConfig: buildNormalizedTradeConfig(currentSettings?.tradeConfig),
+    reportConfig: {
+      ...defaultReportConfig,
+      ...((currentSettings?.reportConfig) || {}),
+    },
+    automation: buildNormalizedAutomationConfig(currentSettings?.automation),
+  }
+}
+
+function normalizeTradeKeepFruitIds(input: any) {
+  const rawItems = Array.isArray(input)
+    ? input
+    : String(input || '').split(/[\s,，]+/)
+  return Array.from(new Set(rawItems
+    .map(v => Number(v))
+    .filter(v => Number.isFinite(v) && v > 0)))
+}
+
+function buildSettingsPayloadFromState(state: any, keepFruitIdsSource?: any) {
+  const payload = JSON.parse(JSON.stringify(state || {}))
+  const ids = normalizeTradeKeepFruitIds(keepFruitIdsSource ?? payload?.tradeConfig?.sell?.keepFruitIds)
+
+  payload.accountMode = resolveAccountMode(payload.accountMode)
+  payload.riskPromptEnabled = payload.riskPromptEnabled !== false
+  payload.modeScope = buildNormalizedModeScope(payload.modeScope)
+  payload.harvestDelay = {
+    min: resolveNumberWithFallback(payload?.harvestDelay?.min, 0),
+    max: resolveNumberWithFallback(payload?.harvestDelay?.max, 0),
+  }
+  payload.plantingFallbackStrategy = String(payload?.plantingFallbackStrategy || 'level')
+  payload.inventoryPlanting = buildNormalizedInventoryPlantingConfig(payload?.inventoryPlanting)
+  payload.intervals = {
+    ...defaultIntervals,
+    ...(payload.intervals || {}),
+  }
+  payload.friendQuietHours = {
+    ...defaultFriendQuietHours,
+    ...(payload.friendQuietHours || {}),
+  }
+  payload.stakeoutSteal = {
+    ...defaultStakeoutSteal,
+    ...(payload.stakeoutSteal || {}),
+  }
+  payload.tradeConfig = buildNormalizedTradeConfig(payload.tradeConfig)
+  payload.tradeConfig.sell.keepFruitIds = ids
+  payload.reportConfig = {
+    ...defaultReportConfig,
+    ...(payload.reportConfig || {}),
+  }
+  payload.automation = buildNormalizedAutomationConfig(payload.automation)
+  return payload
+}
 
 const defaultReportConfig = {
   enabled: false,
@@ -752,6 +959,83 @@ const defaultIntervals = {
   stealMax: 600,
 }
 
+const defaultFriendQuietHours = {
+  enabled: false,
+  start: '23:00',
+  end: '07:00',
+}
+
+const defaultStakeoutSteal = {
+  enabled: false,
+  delaySec: 3,
+}
+
+const defaultInventoryPlanting = {
+  mode: 'disabled' as 'disabled' | 'prefer_inventory' | 'inventory_only',
+  globalKeepCount: 0,
+  reserveRules: [] as Array<{ seedId: number, keepCount: number }>,
+}
+
+function buildNormalizedInventoryPlantingConfig(input: any) {
+  const raw = input && typeof input === 'object' ? input : {}
+  const reserveRules = Array.isArray(raw.reserveRules)
+    ? raw.reserveRules
+      .map((rule: any) => ({
+        seedId: resolveNumberWithFallback(rule?.seedId, 0),
+        keepCount: resolveNumberWithFallback(rule?.keepCount, 0),
+      }))
+      .filter((rule: any) => rule.seedId > 0)
+    : []
+  const seen = new Set<number>()
+  return {
+    mode: ['disabled', 'prefer_inventory', 'inventory_only'].includes(String(raw.mode))
+      ? String(raw.mode) as 'disabled' | 'prefer_inventory' | 'inventory_only'
+      : defaultInventoryPlanting.mode,
+    globalKeepCount: resolveNumberWithFallback(raw.globalKeepCount, 0),
+    reserveRules: reserveRules.filter((rule: any) => {
+      if (seen.has(rule.seedId))
+        return false
+      seen.add(rule.seedId)
+      return true
+    }),
+  }
+}
+
+const defaultAutomationConfig = {
+  farm: false,
+  task: false,
+  sell: false,
+  friend: false,
+  farm_push: false,
+  land_upgrade: false,
+  landUpgradeTarget: 6,
+  friend_steal: false,
+  friend_help: false,
+  friend_bad: false,
+  friend_help_exp_limit: false,
+  email: false,
+  fertilizer_gift: false,
+  fertilizer_buy: false,
+  fertilizer_buy_limit: 100,
+  free_gifts: false,
+  share_reward: false,
+  vip_gift: false,
+  month_card: false,
+  open_server_gift: false,
+  fertilizer: 'none',
+  stealFilterEnabled: false,
+  stealFilterMode: 'blacklist',
+  stealFilterPlantIds: [] as number[],
+  stealFriendFilterEnabled: false,
+  stealFriendFilterMode: 'blacklist',
+  stealFriendFilterIds: [] as number[],
+  friend_auto_accept: false,
+  fertilizer_60s_anti_steal: false,
+  fertilizer_smart_phase: false,
+  fastHarvest: false,
+  forceGetAllEnabled: false,
+}
+
 const defaultTradeConfig = {
   sell: {
     scope: 'fruit_only' as const,
@@ -776,12 +1060,16 @@ const allVisibleReportLogsSelected = computed(() => (
 
 const localSettings = ref({
   accountMode: 'main' as 'main' | 'alt' | 'safe',
-  harvestDelay: { min: 180, max: 300 },
+  harvestDelay: { min: 0, max: 0 },
+  riskPromptEnabled: true,
+  modeScope: { ...defaultModeScope },
   plantingStrategy: 'preferred',
+  plantingFallbackStrategy: 'level',
   preferredSeedId: 0,
+  inventoryPlanting: { ...defaultInventoryPlanting, reserveRules: [] as Array<{ seedId: number, keepCount: number }> },
   intervals: { ...defaultIntervals },
-  friendQuietHours: { enabled: true, start: '23:00', end: '07:00' },
-  stakeoutSteal: { enabled: false, delaySec: 3 },
+  friendQuietHours: { ...defaultFriendQuietHours },
+  stakeoutSteal: { ...defaultStakeoutSteal },
   tradeConfig: {
     sell: {
       ...defaultTradeConfig.sell,
@@ -791,43 +1079,60 @@ const localSettings = ref({
   },
   reportConfig: { ...defaultReportConfig },
   automation: {
-    farm: false,
-    task: false,
-    sell: false,
-    friend: false,
-    farm_push: false,
-    land_upgrade: false,
-    landUpgradeTarget: 6,
-    friend_steal: false,
-    friend_help: false,
-    friend_bad: false,
-    friend_help_exp_limit: false,
-    email: false,
-    fertilizer_gift: false,
-    fertilizer_buy: false,
-    fertilizer_buy_limit: 100,
-    free_gifts: false,
-    share_reward: false,
-    vip_gift: false,
-    month_card: false,
-    open_server_gift: false,
-    fertilizer: 'none',
-    // 偷菜过滤
-    stealFilterEnabled: false,
-    stealFilterMode: 'blacklist',
-    stealFilterPlantIds: [] as number[],
-    // 偷好友过滤
-    stealFriendFilterEnabled: false,
-    stealFriendFilterMode: 'blacklist',
-    stealFriendFilterIds: [] as number[],
-    friend_auto_accept: false,
-    fertilizer_60s_anti_steal: false,
-    fertilizer_smart_phase: false,
-    fastHarvest: false,
-    forceGetAllEnabled: false,
+    ...defaultAutomationConfig,
+    stealFilterPlantIds: [...defaultAutomationConfig.stealFilterPlantIds],
+    stealFriendFilterIds: [...defaultAutomationConfig.stealFriendFilterIds],
   },
 })
 const tradeKeepFruitIdsText = ref('')
+
+const currentModeExecutionMeta = computed(() => {
+  const acc = currentAccountSnapshot.value as any
+  const configuredMode = resolveAccountMode(localSettings.value?.accountMode || acc?.accountMode || acc?.account_mode)
+  const effectiveMode = resolveEffectiveMode(acc?.effectiveMode || configuredMode)
+  const configuredMeta = resolveModeMeta(configuredMode)
+  const effectiveMeta = resolveModeMeta(effectiveMode)
+  const backendLabel = String(acc?.degradeReasonLabel || '').trim()
+  const degradeLabel = backendLabel || resolveDegradeReasonLabel(acc?.degradeReason)
+
+  if (acc?.collaborationEnabled) {
+    return {
+      configuredMeta,
+      effectiveMeta,
+      statusBadge: {
+        label: '协同命中',
+        badge: 'bg-sky-100 text-sky-700 dark:bg-sky-900/40 dark:text-sky-300',
+      },
+      note: '同区 / 游戏好友约束已命中',
+      noteClass: 'text-sky-600 dark:text-sky-300',
+    }
+  }
+
+  if (degradeLabel || effectiveMode !== configuredMode) {
+    return {
+      configuredMeta,
+      effectiveMeta,
+      statusBadge: {
+        label: '独立执行',
+        badge: effectiveMode !== configuredMode
+          ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300'
+          : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200',
+      },
+      note: degradeLabel || '当前已按更保守模式执行',
+      noteClass: effectiveMode !== configuredMode
+        ? 'text-amber-600 dark:text-amber-300'
+        : 'glass-text-muted',
+    }
+  }
+
+  return {
+    configuredMeta,
+    effectiveMeta,
+    statusBadge: null,
+    note: '当前运行模式与配置一致',
+    noteClass: 'glass-text-muted',
+  }
+})
 
 const localOffline = ref({
   channel: 'webhook',
@@ -836,7 +1141,10 @@ const localOffline = ref({
   token: '',
   title: '',
   msg: '',
-  offlineDeleteSec: 0,
+  offlineDeleteEnabled: false,
+  offlineDeleteSec: 1,
+  webhookCustomJsonEnabled: false,
+  webhookCustomJsonTemplate: '',
 })
 
 const localTiming = ref({
@@ -861,171 +1169,22 @@ const passwordForm = ref({
 
 function syncLocalSettings() {
   if (settings.value) {
-    localSettings.value = JSON.parse(JSON.stringify({
-      accountMode: (settings.value as any).accountMode || 'main',
-      harvestDelay: (settings.value as any).harvestDelay || { min: 180, max: 300 },
-      plantingStrategy: settings.value.plantingStrategy,
-      preferredSeedId: settings.value.preferredSeedId,
-      intervals: {
-        ...defaultIntervals,
-        ...(settings.value.intervals || {}),
-      },
-      friendQuietHours: settings.value.friendQuietHours,
-      stakeoutSteal: (settings.value as any).stakeoutSteal || { enabled: false, delaySec: 3 },
-      tradeConfig: ((settings.value as any).tradeConfig || {}).sell
-        ? {
-            sell: {
-              ...defaultTradeConfig.sell,
-              ...(((settings.value as any).tradeConfig || {}).sell || {}),
-              keepFruitIds: Array.isArray((((settings.value as any).tradeConfig || {}).sell || {}).keepFruitIds)
-                ? [...((((settings.value as any).tradeConfig || {}).sell || {}).keepFruitIds)]
-                : [],
-              rareKeep: {
-                ...defaultTradeConfig.sell.rareKeep,
-                ...((((((settings.value as any).tradeConfig || {}).sell || {}).rareKeep) || {})),
-              },
-            },
-          }
-        : {
-            sell: {
-              ...defaultTradeConfig.sell,
-              keepFruitIds: [...defaultTradeConfig.sell.keepFruitIds],
-              rareKeep: { ...defaultTradeConfig.sell.rareKeep },
-            },
-          },
-      reportConfig: (settings.value as any).reportConfig || defaultReportConfig,
-      automation: settings.value.automation,
-    }))
-
-    // Default automation values if missing
-    if (!localSettings.value.automation) {
-      localSettings.value.automation = {
-        farm: false,
-        task: false,
-        sell: false,
-        friend: false,
-        farm_push: false,
-        land_upgrade: false,
-        landUpgradeTarget: 6,
-        friend_steal: false,
-        friend_help: false,
-        friend_bad: false,
-        friend_help_exp_limit: false,
-        email: false,
-        fertilizer_gift: false,
-        fertilizer_buy: false,
-        fertilizer_buy_limit: 100,
-        free_gifts: false,
-        share_reward: false,
-        vip_gift: false,
-        month_card: false,
-        open_server_gift: false,
-        fertilizer: 'none',
-        // 偷菜过滤
-        stealFilterEnabled: false,
-        stealFilterMode: 'blacklist',
-        stealFilterPlantIds: [] as number[],
-        // 偷好友过滤
-        stealFriendFilterEnabled: false,
-        stealFriendFilterMode: 'blacklist',
-        stealFriendFilterIds: [] as number[],
-        friend_auto_accept: false,
-        fertilizer_60s_anti_steal: false,
-        fertilizer_smart_phase: false,
-        fastHarvest: false,
-        forceGetAllEnabled: false,
-      }
-    }
-    else {
-      // Merge with defaults to ensure all keys exist
-      const defaults = {
-        farm: false,
-        task: false,
-        sell: false,
-        friend: false,
-        farm_push: false,
-        land_upgrade: false,
-        landUpgradeTarget: 6,
-        friend_steal: false,
-        friend_help: false,
-        friend_bad: false,
-        friend_help_exp_limit: false,
-        email: false,
-        fertilizer_gift: false,
-        fertilizer_buy: false,
-        fertilizer_buy_limit: 100,
-        free_gifts: false,
-        share_reward: false,
-        vip_gift: false,
-        month_card: false,
-        open_server_gift: false,
-        fertilizer: 'none',
-        // 偷菜过滤
-        stealFilterEnabled: false,
-        stealFilterMode: 'blacklist',
-        stealFilterPlantIds: [] as number[],
-        // 偷好友过滤
-        stealFriendFilterEnabled: false,
-        stealFriendFilterMode: 'blacklist',
-        stealFriendFilterIds: [] as number[],
-        friend_auto_accept: false,
-        fertilizer_60s_anti_steal: false,
-        fertilizer_smart_phase: false,
-        fastHarvest: false,
-        forceGetAllEnabled: false,
-      }
-      localSettings.value.automation = {
-        ...defaults,
-        ...localSettings.value.automation,
-      }
-    }
-
-    if (!localSettings.value.stakeoutSteal) {
-      localSettings.value.stakeoutSteal = { enabled: false, delaySec: 3 }
-    }
-
-    localSettings.value.reportConfig = {
-      ...defaultReportConfig,
-      ...(localSettings.value.reportConfig || {}),
-    }
-    localSettings.value.intervals = {
-      ...defaultIntervals,
-      ...(localSettings.value.intervals || {}),
-    }
-    const currentSellConfig = ((localSettings.value.tradeConfig || {}).sell || {}) as any
-    const currentRareKeep = (currentSellConfig.rareKeep || {}) as any
-    localSettings.value.tradeConfig = {
-      sell: {
-        ...defaultTradeConfig.sell,
-        ...currentSellConfig,
-        keepFruitIds: Array.isArray(currentSellConfig.keepFruitIds) ? currentSellConfig.keepFruitIds : [],
-        rareKeep: {
-          ...defaultTradeConfig.sell.rareKeep,
-          ...currentRareKeep,
-        },
-      },
-    }
+    localSettings.value = JSON.parse(JSON.stringify(buildAccountSettingsStateFromSources()))
     tradeKeepFruitIdsText.value = ((localSettings.value.tradeConfig.sell.keepFruitIds || []) as number[]).join(', ')
 
     // Sync offline settings (global)
     if (settings.value.offlineReminder) {
       localOffline.value = JSON.parse(JSON.stringify(settings.value.offlineReminder))
+      localOffline.value.offlineDeleteEnabled = !!localOffline.value.offlineDeleteEnabled
+      localOffline.value.offlineDeleteSec = Math.max(1, Number(localOffline.value.offlineDeleteSec || 1))
+      localOffline.value.webhookCustomJsonEnabled = !!localOffline.value.webhookCustomJsonEnabled
+      localOffline.value.webhookCustomJsonTemplate = String(localOffline.value.webhookCustomJsonTemplate || '')
     }
   }
 }
 
 function buildSettingsPayload() {
-  const payload = JSON.parse(JSON.stringify(localSettings.value))
-  const ids = String(tradeKeepFruitIdsText.value || '')
-    .split(/[\s,，]+/)
-    .map(v => Number(v))
-    .filter(v => Number.isFinite(v) && v > 0)
-  if (!payload.tradeConfig)
-    payload.tradeConfig = { sell: {} }
-  if (!payload.tradeConfig.sell)
-    payload.tradeConfig.sell = {}
-  payload.tradeConfig.sell.keepFruitIds = Array.from(new Set(ids))
-  return payload
+  return buildSettingsPayloadFromState(localSettings.value, tradeKeepFruitIdsText.value)
 }
 
 // 策略预设应用函数
@@ -1202,12 +1361,29 @@ watch(() => localSettings.value.automation.stealFriendFilterEnabled, (enabled) =
   }
 })
 
+const accountModeOptions = [
+  { label: '主号模式', value: 'main' },
+  { label: '小号模式', value: 'alt' },
+  { label: '风险规避', value: 'safe' },
+]
+
 const fertilizerOptions = [
   { label: '普通 + 有机', value: 'both', description: '极速成长与改良双管齐下，全包化肥方案。' },
   { label: '仅普通化肥', value: 'normal', description: '仅在防偷等关键时刻加速生长，节约高阶成本。' },
   { label: '仅有机化肥', value: 'organic', description: '优先消耗可循环产出的有机肥改善土壤。' },
   { label: '不施肥', value: 'none', description: '佛系种植，绝不消耗任何额外物资。' },
 ]
+
+const fertilizerScopeText = computed(() => {
+  const mode = String(localSettings.value?.automation?.fertilizer || 'none')
+  if (mode === 'none')
+    return '范围：不施肥，不会选择任何地块。'
+  if (mode === 'organic')
+    return '范围：全农场已种植地块（循环有机施肥）。'
+  if (mode === 'normal')
+    return '范围：本轮新种植地块（普通肥补一次）。'
+  return '范围：普通肥用于本轮新种植地块；有机肥用于全农场已种植地块。'
+})
 
 const plantingStrategyOptions = [
   { label: '优先种植种子', value: 'preferred' },
@@ -1216,6 +1392,30 @@ const plantingStrategyOptions = [
   { label: '最大普通肥经验/时', value: 'max_fert_exp' },
   { label: '最大净利润/时', value: 'max_profit' },
   { label: '最大普通肥净利润/时', value: 'max_fert_profit' },
+]
+
+const plantingFallbackStrategyOptions = [
+  { label: '回退最高等级', value: 'level' },
+  { label: '回退优先种子', value: 'preferred' },
+  { label: '回退最低成本', value: 'cheapest' },
+  { label: '暂停本轮种植', value: 'pause' },
+]
+
+const inventoryPlantingModeOptions = [
+  { label: '关闭库存优先', value: 'disabled' },
+  { label: '优先消耗库存', value: 'prefer_inventory' },
+  { label: '仅使用库存', value: 'inventory_only' },
+]
+
+const rareKeepJudgeOptions = [
+  { label: '任一条件命中', value: 'either' },
+  { label: '按作物等级', value: 'plant_level' },
+  { label: '按果实单价', value: 'unit_price' },
+]
+
+const filterModeOptions = [
+  { label: '黑名单', value: 'blacklist' },
+  { label: '白名单', value: 'whitelist' },
 ]
 
 const channelOptions = [
@@ -1297,6 +1497,28 @@ const preferredSeedOptions = computed(() => {
   return options
 })
 
+const inventoryReserveSeedOptions = computed(() => {
+  if (!seeds.value)
+    return []
+  return seeds.value.map(seed => ({
+    label: `${seed.requiredLevel}级 ${seed.name}`,
+    value: seed.seedId,
+  }))
+})
+
+function addInventoryReserveRule() {
+  const usedSeedIds = new Set((localSettings.value.inventoryPlanting.reserveRules || []).map((rule: any) => Number(rule.seedId || 0)))
+  const firstSeed = inventoryReserveSeedOptions.value.find(option => !usedSeedIds.has(Number(option.value || 0)))
+  localSettings.value.inventoryPlanting.reserveRules.push({
+    seedId: Number(firstSeed?.value || 0),
+    keepCount: 0,
+  })
+}
+
+function removeInventoryReserveRule(index: number) {
+  localSettings.value.inventoryPlanting.reserveRules.splice(index, 1)
+}
+
 const analyticsSortByMap: Record<string, string> = {
   max_exp: 'exp',
   max_fert_exp: 'fert',
@@ -1308,6 +1530,10 @@ const strategyPreviewLabel = ref<string | null>(null)
 
 watchEffect(async () => {
   const strategy = localSettings.value.plantingStrategy
+  if (!currentAccountId.value) {
+    strategyPreviewLabel.value = null
+    return
+  }
   if (strategy === 'preferred') {
     strategyPreviewLabel.value = null
     return
@@ -1329,7 +1555,12 @@ watchEffect(async () => {
   const sortBy = analyticsSortByMap[strategy]
   if (sortBy) {
     try {
-      const res = await api.get(`/api/analytics?sort=${sortBy}`)
+      const res = await api.get('/api/analytics', {
+        params: {
+          sort: sortBy,
+          timingMode: 'actual',
+        },
+      })
       const rankings: any[] = res.data.ok ? (res.data.data || []) : []
       const availableIds = new Set(available.map(s => s.seedId))
       const match = rankings.find(r => availableIds.has(Number(r.seedId)))
@@ -1349,9 +1580,14 @@ watchEffect(async () => {
 
 const diffModalVisible = ref(false)
 const diffItems = ref<{ label: string, from: string, to: string }[]>([])
+const diffModalTitle = ref('确认保存改动')
+const diffModalConfirmText = ref('确认并保存')
+const diffModalHint = ref('提示：点击「确认并保存」后，后端调度器将立即应用新策略。')
+let diffConfirmAction: null | (() => Promise<void>) = null
 
 // 翻译映射
 const fieldLabels: Record<string, string> = {
+  accountMode: '账号模式',
   farm: '自动种植收获',
   task: '自动完成任务',
   sell: '自动卖果实',
@@ -1368,7 +1604,9 @@ const fieldLabels: Record<string, string> = {
   email: '自动领取邮件',
   fertilizer_gift: '自动填充化肥',
   fertilizer_buy: '自动购买化肥',
+  fertilizer_buy_limit: '自动购买化肥上限',
   fertilizer_60s_anti_steal: '60秒施肥(防偷)',
+  fertilizer_smart_phase: '智能二季施肥',
   fastHarvest: '成熟秒收取',
   free_gifts: '自动商城礼包',
   share_reward: '自动分享奖励',
@@ -1376,85 +1614,273 @@ const fieldLabels: Record<string, string> = {
   month_card: '自动月卡奖励',
   open_server_gift: '自动开服红包',
   fertilizer: '施肥策略',
+  stealFilterEnabled: '作物过滤开关',
+  stealFilterMode: '作物过滤模式',
+  stealFilterPlantIds: '作物过滤名单',
+  stealFriendFilterEnabled: '好友过滤开关',
+  stealFriendFilterMode: '好友过滤模式',
+  stealFriendFilterIds: '好友过滤名单',
   plantingStrategy: '种植策略',
+  plantingFallbackStrategy: '失配回退策略',
   preferredSeedId: '优先种植种子',
+  inventoryPlanting: '库存种植',
 }
 
-function getValLabel(field: string, val: any) {
-  if (typeof val === 'boolean')
-    return val ? '开启' : '关闭'
-  if (field === 'fertilizer') {
-    return fertilizerOptions.find(o => o.value === val)?.label || val
-  }
-  if (field === 'plantingStrategy') {
-    return plantingStrategyOptions.find(o => o.value === val)?.label || val
-  }
-  if (field === 'preferredSeedId') {
-    return preferredSeedOptions.value.find(o => o.value === val)?.label || val
-  }
-  return String(val)
+const diffFieldLabels: Record<string, string> = {
+  accountMode: '账号模式',
+  'harvestDelay.min': '随机延迟下限 (秒)',
+  'harvestDelay.max': '随机延迟上限 (秒)',
+  riskPromptEnabled: '显示风控提示',
+  'plantingStrategy': '种植策略',
+  'plantingFallbackStrategy': '失配回退策略',
+  'preferredSeedId': '优先种植种子',
+  'inventoryPlanting.mode': '库存种植模式',
+  'inventoryPlanting.globalKeepCount': '全局保留数量',
+  'inventoryPlanting.reserveRules': '库存保留规则',
+  'intervals.farmMin': '农场巡查最小 (秒)',
+  'intervals.farmMax': '农场巡查最大 (秒)',
+  'intervals.friendMin': '好友巡查最小 (秒)',
+  'intervals.friendMax': '好友巡查最大 (秒)',
+  'intervals.helpMin': '帮忙最小 (秒)',
+  'intervals.helpMax': '帮忙最大 (秒)',
+  'intervals.stealMin': '偷菜最小 (秒)',
+  'intervals.stealMax': '偷菜最大 (秒)',
+  'friendQuietHours.enabled': '启用静默时段',
+  'friendQuietHours.start': '静默开始时间',
+  'friendQuietHours.end': '静默结束时间',
+  'stakeoutSteal.enabled': '精准蹲守偷菜',
+  'stakeoutSteal.delaySec': '蹲守延迟',
+  'tradeConfig.sell.keepMinEachFruit': '每种果实至少保留',
+  'tradeConfig.sell.batchSize': '出售批大小',
+  'tradeConfig.sell.keepFruitIds': '强制保留果实 ID',
+  'tradeConfig.sell.rareKeep.enabled': '启用稀有果实保留',
+  'tradeConfig.sell.rareKeep.judgeBy': '稀有判定方式',
+  'tradeConfig.sell.rareKeep.minPlantLevel': '最低作物等级',
+  'tradeConfig.sell.rareKeep.minUnitPrice': '最低单价',
+  'tradeConfig.sell.previewBeforeManualSell': '手动出售前先刷新预览',
+  'reportConfig.enabled': '启用经营汇报',
+  'reportConfig.channel': '汇报渠道',
+  'reportConfig.title': '汇报标题',
+  'reportConfig.endpoint': '汇报接口地址',
+  'reportConfig.token': '汇报 Token',
+  'reportConfig.smtpHost': 'SMTP 服务器',
+  'reportConfig.smtpPort': 'SMTP 端口',
+  'reportConfig.smtpUser': 'SMTP 用户名',
+  'reportConfig.smtpPass': 'SMTP 密码 / 授权码',
+  'reportConfig.emailFrom': '发件邮箱',
+  'reportConfig.emailTo': '收件邮箱',
+  'reportConfig.smtpSecure': '直连 TLS',
+  'reportConfig.hourlyEnabled': '小时汇报',
+  'reportConfig.hourlyMinute': '小时汇报发送分钟',
+  'reportConfig.dailyEnabled': '每日汇报',
+  'reportConfig.dailyHour': '日报发送小时',
+  'reportConfig.dailyMinute': '日报发送分钟',
+  'reportConfig.retentionDays': '汇报保留天数',
 }
 
-async function saveAccountSettings(force: any = false) {
-  if (!currentAccountId.value)
-    return
-  const isForce = force === true
+function getDiffFieldLabel(path: string) {
+  if (diffFieldLabels[path])
+    return diffFieldLabels[path]
+  if (path.startsWith('automation.')) {
+    const key = path.slice('automation.'.length)
+    return fieldLabels[key] || path
+  }
+  return path
+}
 
-  // 计算差异 (排除列表类字段，仅对比基础开关和策略)
-  if (!isForce && settings.value) {
-    const changes: any[] = []
-    const oldAuto = settings.value.automation || {}
-    const newAuto = localSettings.value.automation || {}
+function findOptionLabel(options: Array<{ label: string, value: any }>, value: any) {
+  return options.find(option => option.value === value)?.label || String(value)
+}
 
-    // 对比基础策略
-    ;['accountMode', 'plantingStrategy', 'preferredSeedId'].forEach((key) => {
-      const oldVal = (settings.value as any)[key]
-      const newVal = (localSettings.value as any)[key]
-      if (oldVal !== newVal) {
-        const _label = fieldLabels[key] || key
-        changes.push({ label: _label, from: getValLabel(key, oldVal), to: getValLabel(key, newVal) })
-      }
-    })
+function maskSecretValue(value: any) {
+  const text = String(value || '')
+  if (!text)
+    return '未设置'
+  if (text.length <= 4)
+    return '*'.repeat(text.length)
+  return `${text.slice(0, 2)}***${text.slice(-2)}`
+}
 
-    // 对比状态
-    Object.keys(fieldLabels).forEach((key) => {
-      const oldAutoVal = (oldAuto as any)[key]
-      const newAutoVal = (newAuto as any)[key]
-      if (newAutoVal !== undefined) {
-        if (oldAutoVal !== newAutoVal) {
-          changes.push({ label: fieldLabels[key], from: getValLabel(key, oldAutoVal), to: getValLabel(key, newAutoVal) })
-        }
-      }
-    })
+function formatDiffValue(path: string, value: any) {
+  if (typeof value === 'boolean')
+    return value ? '开启' : '关闭'
+  if (value === undefined || value === null || value === '')
+    return '未设置'
+  if (path === 'accountMode')
+    return findOptionLabel(accountModeOptions, resolveAccountMode(value))
+  if (path === 'plantingStrategy')
+    return findOptionLabel(plantingStrategyOptions, value)
+  if (path === 'plantingFallbackStrategy')
+    return findOptionLabel(plantingFallbackStrategyOptions, value)
+  if (path === 'preferredSeedId')
+    return findOptionLabel(preferredSeedOptions.value, value)
+  if (path === 'inventoryPlanting.mode')
+    return findOptionLabel(inventoryPlantingModeOptions, value)
+  if (path === 'automation.fertilizer')
+    return findOptionLabel(fertilizerOptions, value)
+  if (path === 'tradeConfig.sell.rareKeep.judgeBy')
+    return findOptionLabel(rareKeepJudgeOptions, value)
+  if (path === 'automation.stealFilterMode' || path === 'automation.stealFriendFilterMode')
+    return findOptionLabel(filterModeOptions, value)
+  if (path === 'reportConfig.channel')
+    return findOptionLabel(reportChannelOptions, value)
+  if (path === 'reportConfig.token' || path === 'reportConfig.smtpPass')
+    return maskSecretValue(value)
+  if (path.startsWith('intervals.') || path.startsWith('harvestDelay.') || path === 'stakeoutSteal.delaySec')
+    return `${value} 秒`
+  if (path === 'automation.fertilizer_buy_limit')
+    return `${value} 袋`
+  if (path === 'reportConfig.hourlyMinute' || path === 'reportConfig.dailyMinute')
+    return `${value} 分`
+  if (path === 'reportConfig.dailyHour')
+    return `${value} 时`
+  if (path === 'reportConfig.retentionDays')
+    return Number(value) === 0 ? '不自动清理' : `${value} 天`
+  if (path === 'inventoryPlanting.reserveRules') {
+    return Array.isArray(value) && value.length > 0
+      ? value.map((rule: any) => `${findOptionLabel(inventoryReserveSeedOptions.value, rule?.seedId)} 保留 ${rule?.keepCount || 0}`).join('；')
+      : '未设置'
+  }
+  if (Array.isArray(value))
+    return value.length > 0 ? value.join(', ') : '未设置'
+  return String(value)
+}
 
-    // 对比蹲守配置
-    const oldStake = (settings.value as any).stakeoutSteal || {}
-    const newStake = localSettings.value.stakeoutSteal || {}
-    if (oldStake.enabled !== newStake.enabled) {
-      changes.push({ label: '精准蹲守偷菜', from: getValLabel('stakeoutSteal', !!oldStake.enabled), to: getValLabel('stakeoutSteal', !!newStake.enabled) })
+function isPlainObject(value: any) {
+  return !!value && typeof value === 'object' && !Array.isArray(value)
+}
+
+function normalizeLeafForCompare(value: any) {
+  if (Array.isArray(value))
+    return value.map((item) => {
+      if (item && typeof item === 'object')
+        return JSON.stringify(item)
+      return String(item)
+    }).sort()
+  return value
+}
+
+function collectPathDiffItems(oldValue: any, newValue: any, currentPath = '', changes: Array<{ label: string, from: string, to: string }> = []) {
+  if (isPlainObject(oldValue) || isPlainObject(newValue)) {
+    const oldObj = isPlainObject(oldValue) ? oldValue : {}
+    const newObj = isPlainObject(newValue) ? newValue : {}
+    const keys = [...new Set([...Object.keys(oldObj), ...Object.keys(newObj)])]
+    for (const key of keys) {
+      collectPathDiffItems(oldObj[key], newObj[key], currentPath ? `${currentPath}.${key}` : key, changes)
     }
-
-    if (changes.length > 0) {
-      diffItems.value = changes
-      diffModalVisible.value = true
-      return
-    }
+    return changes
   }
 
+  const oldComparable = normalizeLeafForCompare(oldValue)
+  const newComparable = normalizeLeafForCompare(newValue)
+  if (JSON.stringify(oldComparable) !== JSON.stringify(newComparable)) {
+    changes.push({
+      label: getDiffFieldLabel(currentPath),
+      from: formatDiffValue(currentPath, oldValue),
+      to: formatDiffValue(currentPath, newValue),
+    })
+  }
+  return changes
+}
+
+function getAccountSettingsDiffItems() {
+  if (!settings.value)
+    return []
+  return collectPathDiffItems(
+    buildSettingsPayloadFromState(buildAccountSettingsStateFromSources()),
+    buildSettingsPayload(),
+  )
+}
+
+function closeDiffModal() {
   diffModalVisible.value = false
+  diffConfirmAction = null
+}
+
+function openDiffModal(
+  changes: Array<{ label: string, from: string, to: string }>,
+  options: {
+    title?: string
+    confirmText?: string
+    hint?: string
+    onConfirm: () => Promise<void>
+  },
+) {
+  diffItems.value = changes
+  diffModalTitle.value = options.title || '确认保存改动'
+  diffModalConfirmText.value = options.confirmText || '确认并保存'
+  diffModalHint.value = options.hint || '提示：点击「确认并保存」后，后端调度器将立即应用新策略。'
+  diffConfirmAction = options.onConfirm
+  diffModalVisible.value = true
+}
+
+async function handleDiffModalConfirm() {
+  const action = diffConfirmAction
+  closeDiffModal()
+  if (action)
+    await action()
+}
+
+async function persistAccountSettings(successMessage: string | null = '账号设置已保存') {
   saving.value = true
   try {
     const res = await settingStore.saveSettings(currentAccountId.value, buildSettingsPayload())
     if (res.ok) {
-      showAlert('账号设置已保存')
+      if (successMessage)
+        showAlert(successMessage)
     }
     else {
       showAlert(`保存失败: ${res.error}`, 'danger')
     }
+    return res
   }
   finally {
     saving.value = false
   }
+}
+
+async function saveAccountSettings() {
+  if (!currentAccountId.value)
+    return
+
+  const changes = getAccountSettingsDiffItems()
+  if (changes.length > 0) {
+    openDiffModal(changes, {
+      onConfirm: async () => {
+        await persistAccountSettings('账号设置已保存')
+      },
+    })
+    return
+  }
+
+  await persistAccountSettings('账号设置已保存')
+}
+
+async function runAfterEnsuringAccountSettingsSaved(
+  action: () => Promise<void>,
+  options: {
+    title: string
+    confirmText: string
+    hint: string
+  },
+) {
+  const execute = async () => {
+    const saveRes = await persistAccountSettings(null)
+    if (!saveRes.ok)
+      return
+    await action()
+  }
+
+  const changes = getAccountSettingsDiffItems()
+  if (changes.length > 0) {
+    openDiffModal(changes, {
+      ...options,
+      onConfirm: execute,
+    })
+    return
+  }
+
+  await execute()
 }
 
 async function handleChangePassword() {
@@ -1510,51 +1936,57 @@ async function handleSaveOffline() {
 async function handleSendReportTest() {
   if (!currentAccountId.value)
     return
-  reportTesting.value = true
-  try {
-    const saveRes = await settingStore.saveSettings(currentAccountId.value, buildSettingsPayload())
-    if (!saveRes.ok) {
-      showAlert(`保存汇报配置失败: ${saveRes.error || '未知错误'}`, 'danger')
-      return
+  const sendTestReport = async () => {
+    reportTesting.value = true
+    try {
+      const res = await settingStore.sendReportTest(currentAccountId.value)
+      if (res.ok) {
+        await refreshReportLogs()
+        showAlert('测试汇报已发送，请检查目标渠道')
+      }
+      else {
+        showAlert(`测试发送失败: ${res.error || '未知错误'}`, 'danger')
+      }
     }
+    finally {
+      reportTesting.value = false
+    }
+  }
 
-    const res = await settingStore.sendReportTest(currentAccountId.value)
-    if (res.ok) {
-      await refreshReportLogs()
-      showAlert('测试汇报已发送，请检查目标渠道')
-    }
-    else {
-      showAlert(`测试发送失败: ${res.error || '未知错误'}`, 'danger')
-    }
-  }
-  finally {
-    reportTesting.value = false
-  }
+  await runAfterEnsuringAccountSettingsSaved(sendTestReport, {
+    title: '确认保存并发送测试汇报',
+    confirmText: '确认后发送测试汇报',
+    hint: '提示：点击确认后会先保存当前账号配置，再立即发送一条测试汇报。',
+  })
 }
 
 async function handleSendReport(mode: 'hourly' | 'daily') {
   if (!currentAccountId.value)
     return
-  reportSendingMode.value = mode
-  try {
-    const saveRes = await settingStore.saveSettings(currentAccountId.value, buildSettingsPayload())
-    if (!saveRes.ok) {
-      showAlert(`保存汇报配置失败: ${saveRes.error || '未知错误'}`, 'danger')
-      return
+  const sendReportNow = async () => {
+    reportSendingMode.value = mode
+    try {
+      const res = await settingStore.sendReport(currentAccountId.value, mode)
+      if (res.ok) {
+        await refreshReportLogs()
+        showAlert(mode === 'hourly' ? '小时汇报已发送' : '日报已发送')
+      }
+      else {
+        showAlert(`发送失败: ${res.error || '未知错误'}`, 'danger')
+      }
     }
+    finally {
+      reportSendingMode.value = ''
+    }
+  }
 
-    const res = await settingStore.sendReport(currentAccountId.value, mode)
-    if (res.ok) {
-      await refreshReportLogs()
-      showAlert(mode === 'hourly' ? '小时汇报已发送' : '日报已发送')
-    }
-    else {
-      showAlert(`发送失败: ${res.error || '未知错误'}`, 'danger')
-    }
-  }
-  finally {
-    reportSendingMode.value = ''
-  }
+  await runAfterEnsuringAccountSettingsSaved(sendReportNow, {
+    title: mode === 'hourly' ? '确认保存并发送小时汇报' : '确认保存并发送日报',
+    confirmText: mode === 'hourly' ? '确认后发送小时汇报' : '确认后发送日报',
+    hint: mode === 'hourly'
+      ? '提示：点击确认后会先保存当前账号配置，再立即发送一条小时汇报。'
+      : '提示：点击确认后会先保存当前账号配置，再立即发送一条日报。',
+  })
 }
 
 async function refreshReportLogs(options: { page?: number, pageSize?: number, resetPage?: boolean } = {}) {
@@ -1995,6 +2427,63 @@ async function restoreTimingDefaults() {
 
         <!-- Strategy Content -->
         <div class="p-4 space-y-3">
+          <div class="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,260px)_1fr]">
+            <div class="rounded-xl border border-gray-200/70 bg-white/75 p-3 shadow-sm dark:border-gray-700/70 dark:bg-gray-900/40">
+              <BaseSwitch
+                v-model="localSettings.riskPromptEnabled"
+                label="显示风控功能提示"
+                hint="关闭后仅隐藏界面提示，不会关闭系统真实的安全保护和频率拦截。"
+                recommend="on"
+              />
+            </div>
+            <div
+              v-if="localSettings.riskPromptEnabled"
+              class="rounded-xl border border-sky-200/70 bg-linear-to-br from-sky-50 via-cyan-50 to-white p-4 text-sm shadow-sm dark:border-sky-800/40 dark:from-sky-950/40 dark:via-cyan-950/20 dark:to-gray-900/30"
+            >
+              <div class="mb-2 flex items-center gap-2 text-sky-700 font-semibold dark:text-sky-300">
+                <div class="i-carbon-model-alt" />
+                主号 / 小号作用范围已按区服重构
+              </div>
+              <div class="space-y-1.5 text-sky-900/80 leading-6 dark:text-sky-100/80">
+                <div>当前账号区服：<strong>{{ currentAccountZoneLabel }}</strong>。QQ 区和微信区的数据互不打通，主号/小号关系只在同区内讨论。</div>
+                <div>协同前提：主号和小号必须互为<strong>游戏好友</strong>，否则“主小号协同”没有业务意义。</div>
+                <div>降级规则：若跨区或不是游戏好友，系统仍保留当前账号的运行策略，但会按<strong>独立账号</strong>理解，不再误套主小号联动。</div>
+              </div>
+            </div>
+            <div
+              v-if="localSettings.riskPromptEnabled"
+              class="rounded-xl border border-gray-200/70 bg-white/80 p-4 text-sm shadow-sm dark:border-gray-700/70 dark:bg-gray-900/40"
+            >
+              <div class="mb-2 flex items-center gap-2 text-gray-900 font-semibold dark:text-gray-100">
+                <div class="i-carbon-chart-relationship" />
+                当前运行态判定
+              </div>
+              <div class="space-y-3">
+                <div class="text-gray-600 leading-6 dark:text-gray-300">
+                  当前账号：<strong>{{ currentAccountName || currentAccountId || '未选中' }}</strong>
+                </div>
+                <div class="flex flex-wrap items-center gap-2">
+                  <span class="inline-flex rounded-full px-2.5 py-1 text-xs font-semibold" :class="currentModeExecutionMeta.configuredMeta.badge">
+                    配置:{{ currentModeExecutionMeta.configuredMeta.label }}
+                  </span>
+                  <span class="inline-flex rounded-full px-2.5 py-1 text-xs font-semibold" :class="currentModeExecutionMeta.effectiveMeta.badge">
+                    生效:{{ currentModeExecutionMeta.effectiveMeta.label }}
+                  </span>
+                  <span
+                    v-if="currentModeExecutionMeta.statusBadge"
+                    class="inline-flex rounded-full px-2.5 py-1 text-xs font-semibold"
+                    :class="currentModeExecutionMeta.statusBadge.badge"
+                  >
+                    {{ currentModeExecutionMeta.statusBadge.label }}
+                  </span>
+                </div>
+                <div class="text-xs leading-5" :class="currentModeExecutionMeta.noteClass">
+                  {{ currentModeExecutionMeta.note }}
+                </div>
+              </div>
+            </div>
+          </div>
+
           <!-- Account Mode Selection Panel -->
           <div class="grid grid-cols-1 mb-4 gap-3 md:grid-cols-3">
             <!-- 主号模式 -->
@@ -2010,7 +2499,7 @@ async function restoreTimingDefaults() {
                 <div v-show="localSettings.accountMode === 'main'" class="i-carbon-checkmark-filled text-primary-500" />
               </div>
               <div class="text-xs text-gray-500 leading-tight dark:text-gray-400">
-                享有全部操作权限（如成熟秒收），系统确保主号的优先度和唯一性
+                当前区服内的核心运营号；仅在同区且互为游戏好友时，才具备主号协同意义
               </div>
             </div>
             <!-- 小号模式 -->
@@ -2026,7 +2515,7 @@ async function restoreTimingDefaults() {
                 <div v-show="localSettings.accountMode === 'alt'" class="i-carbon-checkmark-filled text-amber-500" />
               </div>
               <div class="text-xs text-gray-500 leading-tight dark:text-gray-400">
-                限制可能招致仇恨的操作，强制引入延迟收获机制错开高峰
+                当前区服内的辅助号；默认延迟收获并抑制高仇恨动作，跨区或非好友时仅保留本号策略
               </div>
             </div>
             <!-- 风险规避模式 -->
@@ -2042,7 +2531,7 @@ async function restoreTimingDefaults() {
                 <div v-show="localSettings.accountMode === 'safe'" class="i-carbon-checkmark-filled text-emerald-500" />
               </div>
               <div class="text-xs text-gray-500 leading-tight dark:text-gray-400">
-                严格禁用高风险互动，自动脱离黑灰产关联，专用于敏感期
+                敏感期防守号；压低高风险互动，不参与主小号协同，优先保证账号生存
               </div>
             </div>
           </div>
@@ -2052,7 +2541,7 @@ async function restoreTimingDefaults() {
             <h4 class="flex items-center gap-1 text-sm text-amber-700 font-semibold dark:text-amber-400">
               <div class="i-carbon-time" /> 小号专属：收获延迟保护
             </h4>
-            <span class="text-xs text-amber-600 dark:text-amber-500">当农作物成熟时，主动挂机并在随机延时后才收获，降低被风控或连带标记的概率。</span>
+            <span v-if="localSettings.riskPromptEnabled" class="text-xs text-amber-600 dark:text-amber-500">当农作物成熟时，主动随机延后再收，降低被风控或与主号形成同秒轨迹的概率。</span>
             <div class="grid grid-cols-2 mt-2 gap-3 md:grid-cols-4">
               <BaseInput
                 v-model.number="localSettings.harvestDelay.min"
@@ -2074,7 +2563,7 @@ async function restoreTimingDefaults() {
             <h4 class="flex items-center gap-1 text-sm text-emerald-700 font-semibold dark:text-emerald-400">
               <div class="i-carbon-ibm-cloud-security-compliance-center" /> 风险规避专属护盾
             </h4>
-            <span class="text-xs text-emerald-600 dark:text-emerald-500">此模式除自动关闭捣乱接口外，可进一步针对历史出现被封警告的号外置强阻断。</span>
+            <span v-if="localSettings.riskPromptEnabled" class="text-xs text-emerald-600 dark:text-emerald-500">此模式除自动关闭捣乱接口外，可进一步针对历史出现被封警告的号外置强阻断。</span>
             <BaseButton
               variant="outline"
               size="sm"
@@ -2087,7 +2576,7 @@ async function restoreTimingDefaults() {
           </div>
 
           <!-- 极值警告 -->
-          <div v-if="timeWarningVisible && !isAdmin" class="mb-3 flex items-start gap-2 border border-red-200 rounded-md bg-red-50 p-3 text-sm text-red-600 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400">
+          <div v-if="localSettings.riskPromptEnabled && timeWarningVisible && !isAdmin" class="mb-3 flex items-start gap-2 border border-red-200 rounded-md bg-red-50 p-3 text-sm text-red-600 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400">
             <div class="i-carbon-warning-alt mt-0.5 shrink-0 text-lg" />
             <div>
               <strong>危险的轮询设定！</strong><br>
@@ -2095,11 +2584,16 @@ async function restoreTimingDefaults() {
             </div>
           </div>
 
-          <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
+          <div class="grid grid-cols-1 gap-3 md:grid-cols-3">
             <BaseSelect
               v-model="localSettings.plantingStrategy"
               label="种植策略"
               :options="plantingStrategyOptions"
+            />
+            <BaseSelect
+              v-model="localSettings.plantingFallbackStrategy"
+              label="失配回退"
+              :options="plantingFallbackStrategyOptions"
             />
             <BaseSelect
               v-if="localSettings.plantingStrategy === 'preferred'"
@@ -2112,6 +2606,80 @@ async function restoreTimingDefaults() {
               <div class="h-9 flex items-center border border-gray-200 rounded-md bg-gray-50/80 px-3 text-sm text-blue-600 font-bold dark:border-gray-600 dark:bg-gray-700/50 dark:text-blue-400">
                 <div class="i-carbon-checkmark-filled mr-1.5 text-primary-500" />
                 {{ strategyPreviewLabel ?? '加载中...' }}
+              </div>
+            </div>
+          </div>
+
+          <div class="rounded-xl border border-teal-200/70 bg-teal-50/70 p-4 dark:border-teal-800/40 dark:bg-teal-950/10">
+            <div class="mb-3 flex items-center justify-between gap-3">
+              <div>
+                <div class="text-sm text-teal-700 font-semibold dark:text-teal-300">库存优先种植</div>
+                <div class="mt-1 text-xs text-teal-700/80 leading-5 dark:text-teal-200/70">
+                  优先消耗背包现有种子。可按“全局保留数量 + 指定种子保留规则”决定哪些库存不参与自动种植。
+                </div>
+              </div>
+            </div>
+
+            <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
+              <BaseSelect
+                v-model="localSettings.inventoryPlanting.mode"
+                label="库存种植模式"
+                :options="inventoryPlantingModeOptions"
+              />
+              <BaseInput
+                v-model.number="localSettings.inventoryPlanting.globalKeepCount"
+                label="全局保留数量"
+                type="number"
+                min="0"
+              />
+            </div>
+
+            <div v-if="localSettings.inventoryPlanting.mode !== 'disabled'" class="mt-4">
+              <div class="mb-2 flex items-center justify-between gap-2">
+                <div class="text-xs text-teal-700/80 dark:text-teal-200/70">
+                  指定种子保留规则会覆盖全局保留数量。留空时仅使用上面的全局值。
+                </div>
+                <BaseButton
+                  size="sm"
+                  variant="outline"
+                  class="border-teal-300 text-teal-700 dark:border-teal-700 dark:text-teal-300"
+                  @click="addInventoryReserveRule"
+                >
+                  <div class="i-carbon-add mr-1" /> 添加保留规则
+                </BaseButton>
+              </div>
+
+              <div v-if="localSettings.inventoryPlanting.reserveRules.length > 0" class="space-y-2">
+                <div
+                  v-for="(rule, index) in localSettings.inventoryPlanting.reserveRules"
+                  :key="`inventory-rule-${index}`"
+                  class="grid grid-cols-1 gap-2 rounded-lg border border-teal-200/60 bg-white/70 p-3 md:grid-cols-[minmax(0,1fr)_140px_auto] dark:border-teal-800/30 dark:bg-slate-900/30"
+                >
+                  <BaseSelect
+                    v-model="rule.seedId"
+                    label="种子"
+                    :options="inventoryReserveSeedOptions"
+                  />
+                  <BaseInput
+                    v-model.number="rule.keepCount"
+                    label="至少保留"
+                    type="number"
+                    min="0"
+                  />
+                  <div class="flex items-end">
+                    <BaseButton
+                      size="sm"
+                      variant="ghost"
+                      class="text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20"
+                      @click="removeInventoryReserveRule(index)"
+                    >
+                      <div class="i-carbon-trash-can mr-1" /> 删除
+                    </BaseButton>
+                  </div>
+                </div>
+              </div>
+              <div v-else class="rounded-lg border border-dashed border-teal-300/70 px-3 py-4 text-xs text-teal-700/75 dark:border-teal-700/40 dark:text-teal-200/70">
+                当前没有指定种子保留规则，系统只使用“全局保留数量”。
               </div>
             </div>
           </div>
@@ -2364,6 +2932,9 @@ async function restoreTimingDefaults() {
                 <BaseSwitch v-model="localSettings.automation.fastHarvest" label="成熟秒收取" hint="在作物进入成熟前预设定时任务，约提前 200ms 发起收获请求，尽量压缩被偷窗口。和 60 秒施肥防偷可并存。" recommend="conditional" />
                 <BaseSwitch v-model="localSettings.automation.fertilizer_smart_phase" label="智能二季施肥" hint="开启后，二季作物刚种植时不会马上浪费化肥，而是等到耗时最长的黄金阶段再自动进行延期施肥，实现单果经验/金钱收益最大化。" recommend="conditional" />
                 <div class="border-t pt-2 dark:border-gray-700/50">
+                  <div class="mb-2 rounded-md bg-emerald-50/70 px-2.5 py-1.5 text-xs text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300">
+                    {{ fertilizerScopeText }}
+                  </div>
                   <BaseSelect
                     v-model="localSettings.automation.fertilizer"
                     label="内容选择：施肥策略"
@@ -2547,7 +3118,13 @@ async function restoreTimingDefaults() {
             <h3 class="glass-text-main flex items-center gap-2 text-base font-bold">
               <div class="i-carbon-notification" />
               下线提醒
+              <span class="rounded-full bg-blue-500/12 px-2 py-0.5 text-[11px] text-blue-600 font-semibold dark:text-blue-300">
+                全局 / 仅管理员
+              </span>
             </h3>
+            <p class="mt-2 text-xs text-gray-500">
+              这是系统级的统一提醒配置，所有账号共用一套渠道和文案，仅管理员可以修改。
+            </p>
           </div>
 
           <!-- Offline Content -->
@@ -2600,12 +3177,22 @@ async function restoreTimingDefaults() {
                 type="text"
                 placeholder="提醒标题"
               />
+              <BaseSwitch
+                v-model="localOffline.offlineDeleteEnabled"
+                label="离线自动删号"
+                hint="默认关闭。开启后按下面秒数，账号持续离线超时会自动删除。"
+                recommend="off"
+              />
+            </div>
+
+            <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
               <BaseInput
                 v-model.number="localOffline.offlineDeleteSec"
                 label="离线删除账号 (秒)"
                 type="number"
-                min="0"
-                placeholder="0 表示不自动删除"
+                min="1"
+                :disabled="!localOffline.offlineDeleteEnabled"
+                placeholder="默认 1"
               />
             </div>
 
@@ -2615,6 +3202,21 @@ async function restoreTimingDefaults() {
               type="text"
               placeholder="提醒内容"
             />
+
+            <div v-if="localOffline.channel === 'webhook'" class="rounded-lg border border-gray-200/60 p-3 space-y-2 dark:border-gray-700/60">
+              <BaseSwitch
+                v-model="localOffline.webhookCustomJsonEnabled"
+                label="Webhook 自定义 JSON"
+                hint="开启后将按下方 JSON 模板作为请求体发送。可用变量：{{title}} {{content}} {{accountId}} {{accountName}} {{reason}} {{timestamp}} {{isoTime}}"
+                recommend="conditional"
+              />
+              <textarea
+                v-model="localOffline.webhookCustomJsonTemplate"
+                :disabled="!localOffline.webhookCustomJsonEnabled"
+                class="w-full min-h-[120px] rounded-md border border-gray-300/70 bg-white/80 p-2 text-xs font-mono dark:border-gray-600/70 dark:bg-black/20"
+                placeholder='{"title":"{{title}}","content":"{{content}}","accountId":"{{accountId}}","accountName":"{{accountName}}","timestamp":"{{timestamp}}"}'
+              />
+            </div>
           </div>
 
           <!-- Save Offline Button -->
@@ -2625,7 +3227,7 @@ async function restoreTimingDefaults() {
               :loading="offlineSaving"
               @click="handleSaveOffline"
             >
-              保存下线提醒设置
+              保存全局下线提醒
             </BaseButton>
           </div>
         </template>
@@ -2635,14 +3237,20 @@ async function restoreTimingDefaults() {
             <h3 class="glass-text-main flex items-center gap-2 text-base font-bold">
               <div class="i-carbon-report-data" />
               经营汇报
+              <span class="rounded-full bg-emerald-500/12 px-2 py-0.5 text-[11px] text-emerald-600 font-semibold dark:text-emerald-300">
+                账号级 / 当前账号
+              </span>
             </h3>
+            <p class="mt-2 text-xs text-gray-500">
+              这是当前选中账号的独立汇报配置。不同账号可以分别设置不同的推送渠道、发送时段和邮件收件人。
+            </p>
           </div>
 
           <div class="p-4">
             <div class="border border-emerald-100/60 rounded-2xl bg-emerald-50/40 p-5 dark:border-emerald-800/40 dark:bg-emerald-950/10">
               <div class="mb-4 flex items-center justify-between gap-3">
                 <h4 class="flex items-center gap-2 text-xs text-emerald-700 font-bold tracking-widest uppercase dark:text-emerald-300">
-                  <div class="i-carbon-report-data mr-1" /> 经营汇报
+                  <div class="i-carbon-report-data mr-1" /> {{ currentAccountName || '当前账号' }} · 经营汇报
                 </h4>
                 <div class="flex flex-wrap gap-2">
                   <BaseButton
@@ -2676,7 +3284,7 @@ async function restoreTimingDefaults() {
                 <BaseSwitch
                   v-model="localSettings.reportConfig.enabled"
                   label="启用经营汇报"
-                  hint="按设定周期向推送渠道发送账号经营摘要。默认复用你在这里填写的专属推送参数，不影响全局下线提醒。"
+                  hint="按设定周期向当前账号的专属渠道发送经营摘要。这里的设置只影响当前账号，不会改动上方的全局下线提醒。"
                   recommend="conditional"
                 />
 
@@ -4152,12 +4760,12 @@ async function restoreTimingDefaults() {
     <!-- 改动预览 Modal -->
     <ConfirmModal
       :show="diffModalVisible"
-      title="确认保存改动"
-      confirm-text="确认并保存"
+      :title="diffModalTitle"
+      :confirm-text="diffModalConfirmText"
       cancel-text="再检查下"
       type="primary"
-      @confirm="saveAccountSettings(true)"
-      @cancel="diffModalVisible = false"
+      @confirm="handleDiffModalConfirm"
+      @cancel="closeDiffModal"
     >
       <div class="space-y-4">
         <p class="glass-text-muted text-sm">
@@ -4174,7 +4782,7 @@ async function restoreTimingDefaults() {
           </div>
         </div>
         <p class="text-[10px] text-orange-500 italic">
-          提示：点击「确认并保存」后，后端调度器将立即应用新策略。
+          {{ diffModalHint }}
         </p>
       </div>
     </ConfirmModal>

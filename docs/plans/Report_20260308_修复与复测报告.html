@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>QQ 农场智能助手 - 修复与复测报告</title>
+  <style>
+    :root {
+      --bg: #f5f7fb;
+      --panel: #ffffff;
+      --text: #18212f;
+      --muted: #5a6b85;
+      --line: #d8e0ec;
+      --ok: #1f7a4d;
+      --warn: #a15c00;
+      --bad: #b42318;
+      --accent: #0f5bd8;
+      --chip: #eef4ff;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "PingFang SC", "Microsoft YaHei", sans-serif;
+      background: linear-gradient(180deg, #eef3fb 0%, var(--bg) 100%);
+      color: var(--text);
+      line-height: 1.6;
+    }
+    .wrap {
+      max-width: 1120px;
+      margin: 0 auto;
+      padding: 32px 20px 48px;
+    }
+    .hero, .card {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      box-shadow: 0 10px 30px rgba(16, 36, 70, 0.08);
+    }
+    .hero {
+      padding: 28px 30px;
+      margin-bottom: 20px;
+    }
+    .hero h1 {
+      margin: 0 0 8px;
+      font-size: 28px;
+    }
+    .hero p {
+      margin: 6px 0;
+      color: var(--muted);
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 14px;
+      margin-top: 18px;
+    }
+    .metric {
+      background: #f8fbff;
+      border: 1px solid #dce8ff;
+      border-radius: 14px;
+      padding: 14px 16px;
+    }
+    .metric strong {
+      display: block;
+      font-size: 22px;
+      margin-top: 6px;
+    }
+    .section {
+      margin-top: 20px;
+    }
+    .card {
+      padding: 22px 24px;
+    }
+    h2 {
+      margin: 0 0 12px;
+      font-size: 21px;
+    }
+    h3 {
+      margin: 18px 0 10px;
+      font-size: 16px;
+    }
+    p, li {
+      color: var(--text);
+    }
+    ul {
+      margin: 10px 0 0 18px;
+      padding: 0;
+    }
+    .chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 10px;
+    }
+    .chip {
+      background: var(--chip);
+      color: var(--accent);
+      border: 1px solid #d6e4ff;
+      border-radius: 999px;
+      padding: 5px 10px;
+      font-size: 12px;
+      font-weight: 600;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 12px;
+      font-size: 14px;
+      background: #fff;
+      overflow: hidden;
+      border-radius: 12px;
+    }
+    th, td {
+      border: 1px solid var(--line);
+      padding: 10px 12px;
+      text-align: left;
+      vertical-align: top;
+    }
+    th {
+      background: #f2f6fc;
+      color: #24364f;
+      font-weight: 700;
+    }
+    .status-ok { color: var(--ok); font-weight: 700; }
+    .status-warn { color: var(--warn); font-weight: 700; }
+    .status-bad { color: var(--bad); font-weight: 700; }
+    .mono {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 13px;
+      background: #f6f8fb;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 2px 6px;
+    }
+    .footer {
+      color: var(--muted);
+      font-size: 13px;
+      margin-top: 16px;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <section class="hero">
+      <h1>QQ 农场智能助手 修复与复测报告</h1>
+      <p>报告时间：2026-03-08 00:02:50 CST</p>
+      <p>测试环境：本地启动实例 <span class="mono">http://localhost:3010</span>，后端为当前工作区代码，前端为本地重新打包产物。</p>
+      <div class="grid">
+        <div class="metric">
+          已修复问题
+          <strong>8 项</strong>
+        </div>
+        <div class="metric">
+          高优先级回归
+          <strong>通过</strong>
+        </div>
+        <div class="metric">
+          剩余功能性阻塞
+          <strong>1 项</strong>
+        </div>
+        <div class="metric">
+          构建状态
+          <strong>通过</strong>
+        </div>
+      </div>
+      <div class="chips">
+        <span class="chip">登录鉴权</span>
+        <span class="chip">权限控制</span>
+        <span class="chip">设置一致性</span>
+        <span class="chip">运行时状态机</span>
+        <span class="chip">Redis 降级</span>
+        <span class="chip">前端可用性告警</span>
+      </div>
+    </section>
+
+    <section class="section card">
+      <h2>一、结论摘要</h2>
+      <ul>
+        <li><span class="status-ok">已修复</span> 空用户名可直接触发管理员登录分支的严重鉴权漏洞。</li>
+        <li><span class="status-ok">已修复</span> 普通用户前端仅隐藏菜单但可直接进入管理员路由的问题；现在直达 <span class="mono">/users</span> 会被前端守卫重定向到首页。</li>
+        <li><span class="status-ok">已修复</span> 普通用户保存“下线提醒”时前端误报成功的问题；现在前后端均明确拒绝并返回 403。</li>
+        <li><span class="status-ok">已修复</span> 下线自动删除秒数默认值前后端不一致的问题；统一为 <span class="mono">0</span> 表示不自动删除。</li>
+        <li><span class="status-ok">已修复</span> Redis 未配置密码时的启动异常、熔断通知崩溃和无限重连噪音；现在会降级启动，不再刷屏。</li>
+        <li><span class="status-ok">已修复</span> WebSocket 400 后账号仍显示 <span class="mono">running=true</span> 的状态机错误；现在会自动停机并保留 <span class="mono">wsError=400</span> 给前端提示更新 Code。</li>
+        <li><span class="status-ok">已修复</span> 设置页和相关密码输入的浏览器敏感输入告警（form/autocomplete 语义）。</li>
+        <li><span class="status-warn">仍存在外部阻塞</span> 现有两个账号的登录 Code 已失效，真实农场 WebSocket 连接仍返回 400；这不是当前代码缺陷，需要重新扫码更新账号凭证。</li>
+      </ul>
+    </section>
+
+    <section class="section card">
+      <h2>二、本轮已实施修复</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>类别</th>
+            <th>问题</th>
+            <th>修复结果</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>鉴权</td>
+            <td>空用户名 + 管理员密码可直接登录</td>
+            <td>登录入口改为强制校验显式用户名和密码，空值返回 400。</td>
+          </tr>
+          <tr>
+            <td>前端权限</td>
+            <td>普通用户可直接访问管理员路由</td>
+            <td>路由守卫增加角色校验，管理员专属路由自动回退到首页。</td>
+          </tr>
+          <tr>
+            <td>设置一致性</td>
+            <td>普通用户保存全局下线提醒时“看似成功”</td>
+            <td>后端明确返回 403，前端不再本地伪保存，并对普通用户隐藏该区域。</td>
+          </tr>
+          <tr>
+            <td>配置默认值</td>
+            <td><span class="mono">offlineDeleteSec</span> 前端默认 120，后端默认 0</td>
+            <td>统一为 0，并在 store 归一化阶段限制最小值不低于 0。</td>
+          </tr>
+          <tr>
+            <td>后端启动</td>
+            <td>Redis 失败时触发熔断通知崩溃；数据库层误判 Redis 已初始化</td>
+            <td>修正熔断通知实现、数据库导入方式、Redis 初始化返回值和降级日志。</td>
+          </tr>
+          <tr>
+            <td>Redis 连通性</td>
+            <td>无密码环境下 ioredis 自动 ready-check 导致循环 <span class="mono">NOAUTH</span></td>
+            <td>改为显式连接 + 显式 PING，首次鉴权失败即停用 Redis 客户端。</td>
+          </tr>
+          <tr>
+            <td>运行态状态机</td>
+            <td>账号 WebSocket 400 后仍被标记为运行中</td>
+            <td>400 时记录 <span class="mono">wsError</span>、写回 <span class="mono">running=false</span>、停止 worker，并保留错误给界面提示。</td>
+          </tr>
+          <tr>
+            <td>浏览器告警</td>
+            <td>密码输入不在 form 中、缺少 autocomplete 语义</td>
+            <td>补齐表单语义、隐藏 username 字段和 autocomplete 属性。</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section class="section card">
+      <h2>三、复测记录</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>测试项</th>
+            <th>测试方式</th>
+            <th>结果</th>
+            <th>结论</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>空用户名登录</td>
+            <td>POST <span class="mono">/api/login</span>，用户名为空</td>
+            <td class="status-ok">400</td>
+            <td>返回 <span class="mono">用户名和密码不能为空</span>，严重漏洞关闭。</td>
+          </tr>
+          <tr>
+            <td>普通用户管理员接口</td>
+            <td>普通用户请求 <span class="mono">/api/users</span></td>
+            <td class="status-ok">403</td>
+            <td>后端权限拦截正常。</td>
+          </tr>
+          <tr>
+            <td>普通用户修改下线提醒</td>
+            <td>普通用户 POST <span class="mono">/api/settings/offline-reminder</span></td>
+            <td class="status-ok">403</td>
+            <td>不再出现“前端保存成功、后端不生效”的假象。</td>
+          </tr>
+          <tr>
+            <td>普通用户直达管理员页</td>
+            <td>浏览器登录普通用户后直达 <span class="mono">/users</span></td>
+            <td class="status-ok">已重定向到 /</td>
+            <td>前端路由守卫生效。</td>
+          </tr>
+          <tr>
+            <td>普通用户设置页</td>
+            <td>浏览器打开 <span class="mono">/settings</span></td>
+            <td class="status-ok">管理员下线提醒区已隐藏</td>
+            <td>界面权限与后端权限一致。</td>
+          </tr>
+          <tr>
+            <td>Redis 缺密码启动</td>
+            <td>本地启动后端，Redis 未提供密码</td>
+            <td class="status-ok">可启动，单次降级</td>
+            <td>不再出现无限重连和进程崩溃。</td>
+          </tr>
+          <tr>
+            <td>账号 WebSocket 400</td>
+            <td>本地启动实例自动拉起现有账号</td>
+            <td class="status-ok">worker 自动退出</td>
+            <td>账号列表返回 <span class="mono">running=false</span> 且保留 <span class="mono">wsError=400</span>。</td>
+          </tr>
+          <tr>
+            <td>失效账号前端提示</td>
+            <td>浏览器进入首页</td>
+            <td class="status-ok">自动弹出账号编辑/更新入口</td>
+            <td>用户可直接重新扫码修复凭证。</td>
+          </tr>
+          <tr>
+            <td>设置页密码表单告警</td>
+            <td>浏览器打开 <span class="mono">/settings</span> 检查控制台</td>
+            <td class="status-ok">无相关 DOM 警告</td>
+            <td>表单语义修复生效。</td>
+          </tr>
+          <tr>
+            <td>前端类型检查</td>
+            <td><span class="mono">pnpm -C web exec vue-tsc -b</span></td>
+            <td class="status-ok">通过</td>
+            <td>本轮改动未引入 TS 编译错误。</td>
+          </tr>
+          <tr>
+            <td>前端构建</td>
+            <td><span class="mono">pnpm build:web</span></td>
+            <td class="status-ok">通过</td>
+            <td>产物可生成，但仍有非阻断告警。</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section class="section card">
+      <h2>四、剩余问题与归因</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>问题</th>
+            <th>当前状态</th>
+            <th>归因判断</th>
+            <th>处理建议</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>真实农场 WebSocket 连接返回 400</td>
+            <td class="status-warn">未恢复</td>
+            <td>现存账号的第三方登录 Code 已失效，属于外部凭证问题，不是本轮代码缺陷。</td>
+            <td>重新扫码或手动更新有效 Code，再做真实农场链路复测。</td>
+          </tr>
+          <tr>
+            <td>UnoCSS 图标加载失败告警</td>
+            <td class="status-warn">仍存在</td>
+            <td>若干图标名无效或大小写不符合图标集定义，属于前端静态资源命名问题。</td>
+            <td>逐个清理失效图标名，避免 UI 回退为缺图状态。</td>
+          </tr>
+          <tr>
+            <td>Vite 动态导入/静态导入混用告警</td>
+            <td class="status-warn">仍存在</td>
+            <td>模块分块策略告警，不影响功能，但会削弱代码分割收益。</td>
+            <td>统一 <span class="mono">api/index.ts</span> 与 <span class="mono">stores/status.ts</span> 的导入策略。</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section class="section card">
+      <h2>五、优化建议</h2>
+      <h3>建议 1：把“账号失效”从临时状态升级为正式业务状态</h3>
+      <ul>
+        <li>当前已经在运行态中正确停机并保留 <span class="mono">wsError=400</span>，下一步建议在账号表中引入明确的 <span class="mono">status=expired_auth</span> 或等效字段。</li>
+        <li>这样可以避免服务重启后只剩日志、不剩结构化状态，也便于过滤、统计和批量提醒。</li>
+      </ul>
+
+      <h3>建议 2：把 Redis 降级做成显式配置开关</h3>
+      <ul>
+        <li>现在系统已经能在 Redis 鉴权失败时自动降级，但更稳妥的做法是在环境变量中增加“明确禁用 Redis”的选项。</li>
+        <li>这样部署时不需要靠报错再降级，启动日志也更干净。</li>
+      </ul>
+
+      <h3>建议 3：补自动化回归</h3>
+      <ul>
+        <li>优先补以下自动化用例：空用户名登录、普通用户路由越权、普通用户保存管理员设置、Redis 启动降级、WS400 后账号停机与提示。</li>
+        <li>这些都是已经确认过的高风险回归点，适合最先纳入 API 集成测试和前端 E2E。</li>
+      </ul>
+
+      <h3>建议 4：清理前端构建告警</h3>
+      <ul>
+        <li>本轮功能修复完成后，前端仍有两类非阻断告警：失效图标名、动态导入与静态导入混用。</li>
+        <li>它们不会阻塞当前版本使用，但会增加后续维护成本，建议单独做一次前端构建治理。</li>
+      </ul>
+    </section>
+
+    <section class="section card">
+      <h2>六、涉及文件</h2>
+      <ul>
+        <li><span class="mono">core/src/runtime/worker-manager.js</span></li>
+        <li><span class="mono">core/src/runtime/data-provider.js</span></li>
+        <li><span class="mono">web/src/components/ui/BaseInput.vue</span></li>
+        <li><span class="mono">web/src/views/Settings.vue</span></li>
+        <li><span class="mono">web/src/views/Login.vue</span></li>
+        <li><span class="mono">web/src/components/UserInfoCard.vue</span></li>
+      </ul>
+      <p class="footer">说明：本报告聚焦本轮“修复 + 复测”实际改动与验证结果，不重复展开此前已完成且本轮未改动的测试设计内容。</p>
+    </section>
+  </div>
+</body>
+</html>

@@ -21,10 +21,13 @@ const { setInitialValues, resetSessionGains, recordOperation } = require('../ser
 const { initStatusBar, setStatusPlatform, statusData } = require('../services/status');
 const { setRecordGoldExpHook } = require('../services/status');
 const { cleanupTaskSystem, checkAndClaimTasks, getTaskClaimDailyState, getTaskDailyStateLikeApp, getGrowthTaskStateLikeApp } = require('../services/task');
+const { getRuntimeAccountModePolicy, getRuntimeFriendsSnapshot, updateRuntimeFriendsSnapshot } = require('../services/account-mode-policy');
 const { sellAllFruits, getBag, getBagItems, getSellPreview, sellByPolicy, sellSelectedItems, openFertilizerGiftPacksSilently } = require('../services/warehouse');
 const { connect, cleanup, getWs, getUserState, networkEvents } = require('../utils/network');
 const { loadProto } = require('../utils/proto');
 const { setLogHook, log, toNum } = require('../utils/utils');
+const { getCachedFriends } = require('../services/database');
+const EMAIL_CALL_TIMEOUT_MS = 8000;
 
 if (parentPort && workerData && workerData.accountId && !process.env.FARM_ACCOUNT_ID) {
     process.env.FARM_ACCOUNT_ID = String(workerData.accountId);
@@ -72,6 +75,38 @@ function formatLocalDateTime24(date = new Date()) {
     const mm = pad2(d.getMinutes());
     const ss = pad2(d.getSeconds());
     return `${y}-${m}-${day} ${hh}:${mm}:${ss}`;
+}
+
+function withTimeout(promise, timeoutMs, timeoutMessage) {
+    let timer = null;
+    return Promise.race([
+        Promise.resolve(promise).finally(() => {
+            if (timer) clearTimeout(timer);
+        }),
+        new Promise((_, reject) => {
+            timer = setTimeout(() => {
+                reject(new Error(timeoutMessage || 'operation timeout'));
+            }, Math.max(1000, Number(timeoutMs) || 1000));
+        }),
+    ]);
+}
+
+async function runEmailClaimSafely(force = false, scene = 'farm_tick') {
+    try {
+        return await withTimeout(
+            checkAndClaimEmails(force),
+            EMAIL_CALL_TIMEOUT_MS,
+            `邮箱领取超时(${EMAIL_CALL_TIMEOUT_MS}ms)`,
+        );
+    } catch (e) {
+        log('邮箱', `${scene} 邮箱领取已跳过: ${e.message}`, {
+            module: 'task',
+            event: 'email_rewards',
+            result: 'timeout',
+            scene,
+        });
+        return { claimed: 0, rewardItems: 0, skipped: true };
+    }
 }
 
 // 捕获日志发送给主进程
@@ -135,7 +170,7 @@ async function runDailyRoutines(force = false) {
     if (!loginReady) return;
     const auto = getAutomation();
     try {
-        if (auto.email) await checkAndClaimEmails(force);
+        if (auto.email) await runEmailClaimSafely(force, 'daily_routine');
         if (auto.share_reward) await performDailyShare(force);
         if (auto.month_card) await performDailyMonthCardGift(force);
         if (auto.open_server_gift) await performDailyOpenServerGift(force);
@@ -235,7 +270,7 @@ async function runFarmTick(auto) {
     try {
         if (auto.farm) await checkFarm();
         if (auto.task) await checkAndClaimTasks();
-        if (auto.email) await checkAndClaimEmails();
+        if (auto.email) await runEmailClaimSafely(false, 'farm_tick');
         if (auto.fertilizer_gift) await openFertilizerGiftPacksSilently();
         if (auto.fertilizer_buy) await autoBuyOrganicFertilizer();
     } catch (e) {
@@ -529,6 +564,28 @@ async function startBot(config) {
         setInitialValues(Number(latest.gold || 0), Number(latest.exp || 0), Number(latest.coupon || 0));
         resetSessionGains();
 
+        // 冷启动预热：优先使用最近一次缓存的好友快照，缩短 requiresGameFriend 的未知窗口
+        try {
+            if (CONFIG.accountId && !getRuntimeFriendsSnapshot(CONFIG.accountId)) {
+                const cachedFriends = await getCachedFriends(CONFIG.accountId);
+                if (Array.isArray(cachedFriends) && cachedFriends.length > 0) {
+                    updateRuntimeFriendsSnapshot(cachedFriends, CONFIG.accountId);
+                    log('好友', `已预热好友缓存快照 ${cachedFriends.length} 人`, {
+                        module: 'friend',
+                        event: 'friend_cache_preheat',
+                        result: 'ok',
+                        count: cachedFriends.length,
+                    });
+                }
+            }
+        } catch (e) {
+            log('好友', `好友缓存预热失败，继续使用实时探测: ${e.message}`, {
+                module: 'friend',
+                event: 'friend_cache_preheat',
+                result: 'error',
+            });
+        }
+
         // 登录成功后启动各模块
         await processInviteCodes();
         if (getAutomation().fertilizer_gift) {
@@ -767,6 +824,14 @@ function syncStatus() {
     fullStats.preferredSeed = getPreferredSeed();
     fullStats.levelProgress = expProgress;
     fullStats.configRevision = appliedConfigRevision;
+    const modePolicy = getRuntimeAccountModePolicy();
+    fullStats.accountMode = modePolicy.accountMode || 'main';
+    fullStats.effectiveMode = modePolicy.effectiveMode || fullStats.accountMode;
+    fullStats.modeScope = modePolicy.modeScope || {};
+    fullStats.accountZone = modePolicy.accountZone || 'unknown_zone';
+    fullStats.collaborationEnabled = !!modePolicy.collaborationEnabled;
+    fullStats.degradeReason = modePolicy.degradeReason || '';
+    fullStats.degradeReasonLabel = modePolicy.degradeReasonLabel || '';
     const hash = JSON.stringify(fullStats);
     const now = Date.now();
     if (hash !== lastStatusHash || now - lastStatusSentAt > 8000) {

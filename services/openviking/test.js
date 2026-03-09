@@ -7,7 +7,7 @@ const OpenVikingClient = require('../client');
 async function testOpenVikingService() {
   console.log('🧪 开始测试 OpenViking 服务...\n');
 
-  const client = new OpenVikingClient('http://localhost:5000');
+  const client = new OpenVikingClient('http://localhost:5432');
 
   try {
     // 1. 健康检查

@@ -256,10 +256,12 @@ ADMIN_PASSWORD='你的强密码' pnpm dev:core
 ## 🚀 场景 1：全新服务器完整部署
 
 标准部署栈固定为 4 个服务：`主程序 + MySQL + Redis + ipad860`。后续版本主要更新主程序；MySQL、Redis、ipad860 默认复用已部署版本。
-本节默认假设服务器可以直接访问 GitHub 和 Docker Hub 官方源。一键脚本默认从 GitHub 官方地址下载部署文件，并从 Docker Hub 官方仓库拉取镜像；若主程序镜像或 `ipad860` 镜像拉取失败，脚本会回退到下载当前仓库源码包并在服务器本地构建。
-如果你的服务器在中国大陆网络环境，优先查看 [deploy/README.cn.md](deploy/README.cn.md)，里面单独整理了离线包和预载镜像的部署方式。
+如果你的服务器在中国大陆网络环境，优先查看 [deploy/README.cn.md](deploy/README.cn.md)。
 
-自 `v4.5.16` 起，部署链路额外内置 `repair-mysql.sh`：全新安装会在启动后自动校验并补齐 MySQL 旧结构；已部署环境更新时也会先执行数据库修复，再拉起新主程序镜像。只要主程序镜像更新到 `v4.5.16+`，旧版本因数据库结构滞后导致的账号丢失、体验卡到期状态漂移，以及卡密精细化管理所需结构缺失，都不会继续复现。
+自 `v4.5.17` 起，部署目录固定带上两类修复脚本：
+
+- `repair-mysql.sh`：修复旧 MySQL 结构、补齐缺失表/列并回填历史数据
+- `repair-deploy.sh`：修复旧部署目录缺脚本、缺 `docker-compose.yml`、缺 `init-db`、缺 `/opt/qq-farm-bot-current` 链接的问题
 
 ### 一键脚本
 
@@ -268,12 +270,14 @@ bash <(curl -fsSL https://raw.githubusercontent.com/smdk000/qq-farm-ui-pro-max/m
 ```
 
 脚本会自动完成这些事情：
+
 - 检查并安装 Docker / Docker Compose
 - 检查端口占用并提示修改 `WEB_PORT`，非交互模式下会自动顺延到下一个可用端口
 - 在 `/opt/YYYY_MM_DD/qq-farm-bot` 创建部署目录，并自动维护 `/opt/qq-farm-bot-current` 当前版本链接
-- 下载 `docker-compose.yml`、`.env.example`、初始化 SQL、部署说明、一键部署/更新脚本
+- 下载 `docker-compose.yml`、`.env.example`、初始化 SQL、部署说明、一键部署/更新/修复脚本
 - 启动 `qq-farm-bot`、`mysql`、`redis`、`ipad860`
 - 等待容器健康检查通过
+- 启动完成后自动执行一次 `repair-mysql.sh`
 
 常用无交互写法：
 
@@ -285,7 +289,7 @@ bash <(curl -fsSL https://raw.githubusercontent.com/smdk000/qq-farm-ui-pro-max/m
 如需固定镜像版本或覆盖仓库，可在 `.env` 中设置：
 
 ```bash
-APP_IMAGE=smdk000/qq-farm-bot-ui:4.5.16
+APP_IMAGE=smdk000/qq-farm-bot-ui:4.5.17
 MYSQL_IMAGE=mysql:8.0
 REDIS_IMAGE=redis:7-alpine
 IPAD860_IMAGE=smdk000/ipad860:latest
@@ -302,10 +306,10 @@ curl -fsSLo .env.example https://raw.githubusercontent.com/smdk000/qq-farm-ui-pr
 curl -fsSLo init-db/01-init.sql --create-dirs https://raw.githubusercontent.com/smdk000/qq-farm-ui-pro-max/main/deploy/init-db/01-init.sql
 curl -fsSLo update-app.sh https://raw.githubusercontent.com/smdk000/qq-farm-ui-pro-max/main/scripts/deploy/update-app.sh
 curl -fsSLo repair-mysql.sh https://raw.githubusercontent.com/smdk000/qq-farm-ui-pro-max/main/scripts/deploy/repair-mysql.sh
+curl -fsSLo repair-deploy.sh https://raw.githubusercontent.com/smdk000/qq-farm-ui-pro-max/main/scripts/deploy/repair-deploy.sh
 curl -fsSLo fresh-install.sh https://raw.githubusercontent.com/smdk000/qq-farm-ui-pro-max/main/scripts/deploy/fresh-install.sh
 curl -fsSLo quick-deploy.sh https://raw.githubusercontent.com/smdk000/qq-farm-ui-pro-max/main/scripts/deploy/quick-deploy.sh
-chmod +x update-app.sh
-chmod +x repair-mysql.sh fresh-install.sh quick-deploy.sh
+chmod +x update-app.sh repair-mysql.sh repair-deploy.sh fresh-install.sh quick-deploy.sh
 
 # 按需修改端口、管理员密码、第三方扫码配置
 cp .env.example .env
@@ -331,17 +335,35 @@ cd /opt/qq-farm-bot-current
 bash update-app.sh
 
 # 如需切到指定版本
-bash update-app.sh --image smdk000/qq-farm-bot-ui:4.5.16
+bash update-app.sh --image smdk000/qq-farm-bot-ui:4.5.17
 
 # 只想单独修复旧 MySQL 结构
 bash repair-mysql.sh --backup
 ```
 
 补充说明：
+
 - `deploy/init-db/01-init.sql` 只会在 MySQL 空数据卷首次启动时执行。
 - `repair-mysql.sh` 会对旧数据库执行幂等修复，补齐缺失表/列、回填 `cards.days / used_at / expires_at`，可重复执行。
-- 已部署环境如果直接更新到 `v4.5.16+`，`update-app.sh` 会先执行 `repair-mysql.sh`，再更新主程序镜像。
-- 如果服务器仍在运行旧镜像，即使部署脚本和 SQL 已更新，账号切换后丢失的问题仍可能复现。
+- `update-app.sh` 会先执行 `repair-mysql.sh`，再更新主程序镜像。
+- `update-app.sh` 会同步部署目录里的 `docker-compose.yml`、`.env.example`、README 和修复脚本。
+- `update-app.sh` 会重新维护 `/opt/qq-farm-bot-current` 链接，避免旧服 current 链接丢失。
+
+## 🩹 场景 3：旧服务器先修部署包，再升级
+
+适用于这些情况：
+
+- 部署目录里没有 `repair-mysql.sh` / `update-app.sh`
+- `docker-compose.yml`、`init-db/01-init.sql`、`.env.example` 已经很旧
+- `/opt/qq-farm-bot-current` 丢失或指向错误目录
+
+```bash
+cd /opt/qq-farm-bot-current 2>/dev/null || cd /opt
+curl -fsSLo repair-deploy.sh https://raw.githubusercontent.com/smdk000/qq-farm-ui-pro-max/main/scripts/deploy/repair-deploy.sh
+chmod +x repair-deploy.sh
+./repair-deploy.sh --backup
+./update-app.sh --image smdk000/qq-farm-bot-ui:4.5.17
+```
 
 ## 📊 验证部署成功
 

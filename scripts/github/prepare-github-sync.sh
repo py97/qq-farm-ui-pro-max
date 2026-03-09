@@ -106,7 +106,7 @@ else
 # AI 编程助手配置
 
 # OpenViking 服务地址
-OPENVIKING_URL=http://localhost:5000
+OPENVIKING_URL=http://localhost:5432
 
 # 阿里云百炼 API Key（千问 3.5 Plus）
 # 获取地址：https://dashscope.console.aliyun.com/
@@ -135,7 +135,7 @@ else
 OPENVIKING_WORKSPACE=./openviking_data
 
 # OpenViking 服务端口
-OPENVIKING_PORT=5000
+OPENVIKING_PORT=5432
 
 # Flask 调试模式
 FLASK_DEBUG=False
@@ -144,8 +144,8 @@ FLASK_DEBUG=False
 # 获取地址：https://dashscope.console.aliyun.com/
 DASHSCOPE_API_KEY=sk-your-api-key-here
 
-# OpenViking 配置文件路径（可选，默认 ~/.openviking/ov.conf）
-# OPENVIKING_CONFIG=~/.openviking/ov.conf
+# OpenViking 配置文件路径
+OPENVIKING_CONFIG_FILE=./ov.conf
 EOF
 fi
 

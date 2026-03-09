@@ -6,22 +6,30 @@
  * 无感知、自动执行、故障自重启
  */
 
-const { spawn, fork } = require('child_process');
+const { spawn } = require('child_process');
+const net = require('net');
 const path = require('path');
 const fs = require('fs');
-const axios = require('axios');
+const { resolveAiProjectRoot } = require('../../core/src/services/ai-workspace');
 
-const PROJECT_ROOT = path.join(__dirname, '..', '..');
+const DEFAULT_PROJECT_ROOT = path.join(__dirname, '..', '..');
+const PROJECT_ROOT = (() => {
+  return resolveAiProjectRoot(process.env.AI_SERVICE_PROJECT_ROOT || '', {
+    baseDir: DEFAULT_PROJECT_ROOT,
+  });
+})();
 const LOG_DIR = path.join(PROJECT_ROOT, 'logs');
+const PID_FILE = path.join(LOG_DIR, 'ai-daemon.pid');
 
 // 配置
 const CONFIG = {
-  openVikingPort: process.env.OPENVIKING_PORT || 5000,
-  openVikingUrl: process.env.OPENVIKING_URL || 'http://localhost:5000',
+  openVikingPort: process.env.OPENVIKING_PORT || 5432,
+  openVikingUrl: process.env.OPENVIKING_URL || 'http://localhost:5432',
   restartDelay: 3000, // 重启延迟 3 秒
   healthCheckInterval: 30000, // 健康检查间隔 30 秒
   maxRestarts: 5, // 最大重启次数
   healthCheckTimeout: 5000, // 健康检查超时 5 秒
+  startupTimeout: 15000, // 启动超时 15 秒
 };
 
 // 进程状态
@@ -31,6 +39,14 @@ let processes = {
     openViking: 0,
   },
 };
+let isShuttingDown = false;
+let pendingRestartTimer = null;
+let openVikingStartPromise = null;
+const ignoredExitPids = new Set();
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 // 日志函数
 function log(message, type = 'INFO') {
@@ -47,92 +63,236 @@ function log(message, type = 'INFO') {
   fs.appendFileSync(logFile, logMessage + '\n');
 }
 
+function writePidFile() {
+  if (!fs.existsSync(LOG_DIR)) {
+    fs.mkdirSync(LOG_DIR, { recursive: true });
+  }
+  fs.writeFileSync(PID_FILE, String(process.pid));
+}
+
+function cleanupPidFile() {
+  try {
+    if (!fs.existsSync(PID_FILE)) {
+      return;
+    }
+    const currentPid = Number.parseInt(fs.readFileSync(PID_FILE, 'utf8'), 10);
+    if (currentPid === process.pid) {
+      fs.unlinkSync(PID_FILE);
+    }
+  } catch {
+    // Ignore pid file cleanup failures on exit.
+  }
+}
+
+function markOpenVikingExitIgnored(childProcess) {
+  if (!childProcess || !childProcess.pid) return;
+  ignoredExitPids.add(childProcess.pid);
+}
+
+function clearPendingRestart() {
+  if (!pendingRestartTimer) return;
+  clearTimeout(pendingRestartTimer);
+  pendingRestartTimer = null;
+}
+
+function scheduleOpenVikingRestart() {
+  clearPendingRestart();
+  pendingRestartTimer = setTimeout(() => {
+    pendingRestartTimer = null;
+    startOpenViking().catch((error) => {
+      log(`[OpenViking] 自动重启失败：${error.message}`, 'ERROR');
+    });
+  }, CONFIG.restartDelay);
+}
+
+function isExternalOpenVikingHandle(handle) {
+  return Boolean(handle && handle.external === true);
+}
+
+function adoptExistingOpenViking() {
+  clearPendingRestart();
+  processes.openViking = {
+    external: true,
+    pid: null,
+  };
+  processes.restartCounts.openViking = 0;
+}
+
 // 检查 OpenViking 服务健康状态
 async function checkHealth() {
   try {
-    const response = await axios.get(`${CONFIG.openVikingUrl}/health`, {
-      timeout: CONFIG.healthCheckTimeout,
+    const response = await fetch(`${CONFIG.openVikingUrl}/health`, {
+      signal: AbortSignal.timeout(CONFIG.healthCheckTimeout),
     });
-    return response.data.status === 'healthy';
+    if (!response.ok) {
+      return false;
+    }
+    const data = await response.json();
+    return data.status === 'healthy';
   } catch (error) {
     return false;
   }
 }
 
+function isPortListening(port, host = '127.0.0.1') {
+  const normalizedPort = Number.parseInt(port, 10);
+  if (!Number.isFinite(normalizedPort) || normalizedPort <= 0) {
+    return Promise.resolve(false);
+  }
+
+  return new Promise((resolve) => {
+    const socket = net.createConnection({ port: normalizedPort, host });
+    const finalize = (listening) => {
+      socket.removeAllListeners();
+      socket.destroy();
+      resolve(listening);
+    };
+
+    socket.setTimeout(500);
+    socket.once('connect', () => finalize(true));
+    socket.once('timeout', () => finalize(false));
+    socket.once('error', () => finalize(false));
+  });
+}
+
+async function waitForOpenVikingReady(pythonProcess) {
+  const deadline = Date.now() + CONFIG.startupTimeout;
+  while (Date.now() < deadline) {
+    if (pythonProcess.exitCode !== null) {
+      throw new Error(`OpenViking 启动失败，进程提前退出 (${pythonProcess.exitCode})`);
+    }
+    if (await checkHealth()) {
+      return true;
+    }
+    await sleep(250);
+  }
+  return false;
+}
+
+async function launchOpenVikingProcess(venvPython, openVikingDir) {
+  const pythonProcess = spawn(
+    venvPython,
+    ['app.py'],
+    {
+      cwd: openVikingDir,
+      stdio: ['ignore', 'pipe', 'pipe'],
+      env: { ...process.env },
+    }
+  );
+
+  processes.openViking = pythonProcess;
+
+  pythonProcess.stdout.on('data', (data) => {
+    log(`[OpenViking] ${data.toString().trim()}`);
+  });
+
+  pythonProcess.stderr.on('data', (data) => {
+    log(`[OpenViking] ${data.toString().trim()}`, 'ERROR');
+  });
+
+  pythonProcess.on('error', (error) => {
+    log(`[OpenViking] 进程错误：${error.message}`, 'ERROR');
+  });
+
+  pythonProcess.on('exit', (code) => {
+    const ignoredExit = ignoredExitPids.delete(pythonProcess.pid);
+    log(`[OpenViking] 进程退出，代码：${code}`, 'WARN');
+
+    if (processes.openViking === pythonProcess) {
+      processes.openViking = null;
+    }
+
+    if (ignoredExit || isShuttingDown) {
+      log('[OpenViking] 当前退出属于受控关闭，跳过自动重启', 'INFO');
+      return;
+    }
+
+    if (processes.restartCounts.openViking < CONFIG.maxRestarts) {
+      processes.restartCounts.openViking++;
+      log(`[OpenViking] 将在 ${CONFIG.restartDelay}ms 后重启 (第${processes.restartCounts.openViking}次尝试)`, 'WARN');
+      scheduleOpenVikingRestart();
+      return;
+    }
+
+    log('[OpenViking] 达到最大重启次数，停止重启', 'ERROR');
+  });
+
+  let ready = false;
+  try {
+    ready = await waitForOpenVikingReady(pythonProcess);
+  } catch (error) {
+    markOpenVikingExitIgnored(pythonProcess);
+    if (pythonProcess.pid && pythonProcess.exitCode === null) {
+      if (process.platform === 'win32') {
+        spawn('taskkill', ['/pid', pythonProcess.pid, '/f', '/t']);
+      } else {
+        process.kill(pythonProcess.pid, 'SIGTERM');
+      }
+    }
+    throw error;
+  }
+
+  if (!ready) {
+    markOpenVikingExitIgnored(pythonProcess);
+    if (pythonProcess.pid && pythonProcess.exitCode === null) {
+      if (process.platform === 'win32') {
+        spawn('taskkill', ['/pid', pythonProcess.pid, '/f', '/t']);
+      } else {
+        process.kill(pythonProcess.pid, 'SIGTERM');
+      }
+    }
+    throw new Error('OpenViking 启动超时');
+  }
+
+  clearPendingRestart();
+  log('[OpenViking] 服务启动成功', 'SUCCESS');
+  processes.restartCounts.openViking = 0;
+}
+
 // 启动 OpenViking 服务
 function startOpenViking() {
-  return new Promise((resolve, reject) => {
-    const openVikingDir = path.join(__dirname, '..', '..', 'services', 'openviking');
+  if (openVikingStartPromise) {
+    return openVikingStartPromise;
+  }
+
+  openVikingStartPromise = (async () => {
+    if (await checkHealth()) {
+      if (!isExternalOpenVikingHandle(processes.openViking)) {
+        log('[OpenViking] 检测到端口上已有健康实例，守护进程改为接管现有服务', 'WARN');
+      }
+      adoptExistingOpenViking();
+      return;
+    }
+
+    if (await isPortListening(CONFIG.openVikingPort)) {
+      throw new Error(`OpenViking 端口 ${CONFIG.openVikingPort} 已被占用，但健康检查未通过，请先释放端口`);
+    }
+
+    if (isExternalOpenVikingHandle(processes.openViking)) {
+      processes.openViking = null;
+    }
+
+    const openVikingDir = path.join(PROJECT_ROOT, 'services', 'openviking');
+    if (!fs.existsSync(openVikingDir)) {
+      throw new Error(`OpenViking 目录不存在: ${openVikingDir}`);
+    }
+
     const venvPython = process.platform === 'win32'
       ? path.join(openVikingDir, 'venv', 'Scripts', 'python.exe')
       : path.join(openVikingDir, 'venv', 'bin', 'python');
 
-    // 检查虚拟环境
     if (!fs.existsSync(venvPython)) {
       log('Python 虚拟环境不存在，正在创建...', 'WARN');
-      createVenv(openVikingDir)
-        .then(() => installDependencies(openVikingDir))
-        .then(() => startService())
-        .catch(reject);
-      return;
+      await createVenv(openVikingDir);
+      await installDependencies(openVikingDir);
     }
 
-    startService();
-
-    function startService() {
-      const pythonProcess = spawn(
-        venvPython,
-        ['app.py'],
-        {
-          cwd: openVikingDir,
-          stdio: ['ignore', 'pipe', 'pipe'],
-          env: { ...process.env },
-        }
-      );
-
-      processes.openViking = pythonProcess;
-
-      pythonProcess.stdout.on('data', (data) => {
-        log(`[OpenViking] ${data.toString().trim()}`);
-      });
-
-      pythonProcess.stderr.on('data', (data) => {
-        log(`[OpenViking] ${data.toString().trim()}`, 'ERROR');
-      });
-
-      pythonProcess.on('error', (error) => {
-        log(`[OpenViking] 进程错误：${error.message}`, 'ERROR');
-        reject(error);
-      });
-
-      pythonProcess.on('exit', (code) => {
-        log(`[OpenViking] 进程退出，代码：${code}`, 'WARN');
-        processes.openViking = null;
-
-        // 自动重启
-        if (code !== 0 && processes.restartCounts.openViking < CONFIG.maxRestarts) {
-          processes.restartCounts.openViking++;
-          log(`[OpenViking] 将在 ${CONFIG.restartDelay}ms 后重启 (第${processes.restartCounts.openViking}次尝试)`, 'WARN');
-          setTimeout(() => startOpenViking(), CONFIG.restartDelay);
-        } else if (processes.restartCounts.openViking >= CONFIG.maxRestarts) {
-          log('[OpenViking] 达到最大重启次数，停止重启', 'ERROR');
-        }
-      });
-
-      // 等待服务启动
-      setTimeout(async () => {
-        const healthy = await checkHealth();
-        if (healthy) {
-          log('[OpenViking] 服务启动成功', 'SUCCESS');
-          processes.restartCounts.openViking = 0; // 重置重启计数
-          resolve();
-        } else {
-          log('[OpenViking] 服务启动超时', 'ERROR');
-          reject(new Error('OpenViking 启动超时'));
-        }
-      }, 5000);
-    }
+    await launchOpenVikingProcess(venvPython, openVikingDir);
+  })().finally(() => {
+    openVikingStartPromise = null;
   });
+
+  return openVikingStartPromise;
 }
 
 // 创建虚拟环境
@@ -179,29 +339,45 @@ async function installDependencies(dir) {
 // 定期健康检查
 function startHealthCheck() {
   setInterval(async () => {
-    if (!processes.openViking) {
-      log('[健康检查] OpenViking 进程不存在，尝试重启...', 'WARN');
-      processes.restartCounts.openViking = 0; // 重置计数
-      await startOpenViking();
-      return;
-    }
-
-    const healthy = await checkHealth();
-    if (!healthy) {
-      log('[健康检查] OpenViking 服务不健康，尝试重启...', 'WARN');
-
-      // 杀死进程
-      if (processes.openViking.pid) {
-        if (process.platform === 'win32') {
-          spawn('taskkill', ['/pid', processes.openViking.pid, '/f', '/t']);
-        } else {
-          process.kill(processes.openViking.pid, 'SIGKILL');
-        }
+    try {
+      if (!processes.openViking) {
+        log('[健康检查] OpenViking 进程不存在，尝试重启...', 'WARN');
+        processes.restartCounts.openViking = 0; // 重置计数
+        await startOpenViking();
+        return;
       }
 
-      // 重启
-      processes.restartCounts.openViking = 0; // 重置计数
-      await startOpenViking();
+      const healthy = await checkHealth();
+      if (isExternalOpenVikingHandle(processes.openViking)) {
+        if (healthy) {
+          return;
+        }
+        log('[健康检查] 已接管的 OpenViking 外部实例失联，尝试重新拉起守护实例...', 'WARN');
+        processes.openViking = null;
+        processes.restartCounts.openViking = 0;
+        await startOpenViking();
+        return;
+      }
+
+      if (!healthy) {
+        log('[健康检查] OpenViking 服务不健康，尝试重启...', 'WARN');
+
+        // 杀死进程
+        if (processes.openViking.pid) {
+          markOpenVikingExitIgnored(processes.openViking);
+          if (process.platform === 'win32') {
+            spawn('taskkill', ['/pid', processes.openViking.pid, '/f', '/t']);
+          } else {
+            process.kill(processes.openViking.pid, 'SIGKILL');
+          }
+        }
+
+        // 重启
+        processes.restartCounts.openViking = 0; // 重置计数
+        await startOpenViking();
+      }
+    } catch (error) {
+      log(`[健康检查] 执行失败：${error.message}`, 'ERROR');
     }
   }, CONFIG.healthCheckInterval);
 
@@ -210,20 +386,33 @@ function startHealthCheck() {
 
 // 优雅关闭
 function gracefulShutdown(signal) {
+  isShuttingDown = true;
+  clearPendingRestart();
   log(`[守护进程] 收到信号：${signal}，正在关闭服务...`);
 
   const shutdown = () => {
+    if (isExternalOpenVikingHandle(processes.openViking)) {
+      log('[守护进程] 当前 OpenViking 为外部实例，守护进程退出时不主动关闭', 'INFO');
+      processes.openViking = null;
+    }
+
     if (processes.openViking) {
       log('[守护进程] 关闭 OpenViking 服务...');
+      const childProcess = processes.openViking;
+      markOpenVikingExitIgnored(childProcess);
 
       // 调用 shutdown 接口
-      axios.post(`${CONFIG.openVikingUrl}/shutdown`)
+      fetch(`${CONFIG.openVikingUrl}/shutdown`, {
+        method: 'POST',
+        signal: AbortSignal.timeout(CONFIG.healthCheckTimeout),
+      })
         .catch(() => { }) // 忽略错误
         .finally(() => {
+          if (!childProcess || !childProcess.pid) return;
           if (process.platform === 'win32') {
-            spawn('taskkill', ['/pid', processes.openViking.pid, '/f', '/t']);
+            spawn('taskkill', ['/pid', childProcess.pid, '/f', '/t']);
           } else {
-            process.kill(processes.openViking.pid, 'SIGTERM');
+            process.kill(childProcess.pid, 'SIGTERM');
           }
         });
     }
@@ -239,6 +428,7 @@ function gracefulShutdown(signal) {
 
 // 主函数
 async function main() {
+  writePidFile();
   log('[守护进程] AI 服务守护进程启动', 'SUCCESS');
   log('[守护进程] 配置:', 'INFO');
   log(`  - OpenViking 端口：${CONFIG.openVikingPort}`);
@@ -267,6 +457,8 @@ async function main() {
 }
 
 // 运行
+process.on('exit', cleanupPidFile);
+
 main().catch((error) => {
   log(`[守护进程] 启动失败：${error.message}`, 'ERROR');
   process.exit(1);

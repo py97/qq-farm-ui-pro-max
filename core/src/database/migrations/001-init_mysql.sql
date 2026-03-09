@@ -29,6 +29,7 @@ CREATE TABLE IF NOT EXISTS `accounts` (
     `auth_data` JSON DEFAULT NULL,
     `username` VARCHAR(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
     `avatar` VARCHAR(512) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+    `last_login_at` DATETIME DEFAULT NULL,
     `created_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
     `updated_at` DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),

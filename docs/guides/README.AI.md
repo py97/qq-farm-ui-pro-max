@@ -45,7 +45,7 @@ pip install -r requirements.txt
 OPENVIKING_WORKSPACE=./openviking_data
 
 # OpenViking 服务端口
-OPENVIKING_PORT=5000
+OPENVIKING_PORT=5432
 
 # 阿里云百炼 API Key（千问 3.5 Plus）
 DASHSCOPE_API_KEY=sk-2cabc0684b6943ef81020be207ec8f17
@@ -152,12 +152,12 @@ node examples/ai-assistant-example.js
 
 #### 健康检查
 ```bash
-GET http://localhost:5000/health
+GET http://localhost:5432/health
 ```
 
 #### 添加资源
 ```bash
-POST http://localhost:5000/api/resource/add
+POST http://localhost:5432/api/resource/add
 {
   "path": "https://github.com/example/repo",
   "name": "my-project"
@@ -166,7 +166,7 @@ POST http://localhost:5000/api/resource/add
 
 #### 搜索资源
 ```bash
-POST http://localhost:5000/api/resource/search
+POST http://localhost:5432/api/resource/search
 {
   "query": "authentication",
   "target_uri": "viking://resources/"
@@ -175,7 +175,7 @@ POST http://localhost:5000/api/resource/search
 
 #### 获取上下文
 ```bash
-POST http://localhost:5000/api/context/get
+POST http://localhost:5432/api/context/get
 {
   "query": "how to implement login",
   "include_memories": true,
@@ -185,7 +185,7 @@ POST http://localhost:5000/api/context/get
 
 #### 添加记忆
 ```bash
-POST http://localhost:5000/api/memory/add
+POST http://localhost:5432/api/memory/add
 {
   "content": "喜欢使用 TypeScript 进行开发",
   "category": "preferences"
@@ -257,13 +257,13 @@ qq-farm-bot-ui-main/
     "workspace": "./openviking_data"
   },
   "embedding": {
-    "api_base": "https://dashscope.aliyuncs.com/api/v2/apps/protocols/compatible-mode/v1",
+    "api_base": "https://dashscope.aliyuncs.com/compatible-mode/v1",
     "api_key": "sk-2cabc0684b6943ef81020be207ec8f17",
-    "provider": "dashscope",
-    "model": "text-embedding-v3"
+    "provider": "openai",
+    "model": "text-embedding-v4"
   },
   "vlm": {
-    "api_base": "https://dashscope.aliyuncs.com/api/v2/apps/protocols/compatible-mode/v1",
+    "api_base": "https://dashscope.aliyuncs.com/compatible-mode/v1",
     "api_key": "sk-2cabc0684b6943ef81020be207ec8f17",
     "model": "qwen3.5-plus"
   }
@@ -299,7 +299,8 @@ node examples/ai-assistant-example.js
 
 1. 检查 Python 版本是否为 3.10+
 2. 确认已安装所有依赖：`pip install -r requirements.txt`
-3. 检查端口 5000 是否被占用
+3. 检查端口 `5432` 是否被占用
+4. 如果日志里出现 `AGFS port 8080 is already in use`，同时检查 `8080` 是否有残留 AGFS 实例
 
 ### AI 助手无法使用
 

@@ -22,11 +22,27 @@ BLUE='\033[0;34m'
 NC='\033[0m'
 COMPOSE_PULL_RETRIES="${COMPOSE_PULL_RETRIES:-3}"
 PULL_RETRY_DELAY_SECONDS="${PULL_RETRY_DELAY_SECONDS:-10}"
+ADMIN_PASSWORD_EXPLICIT=0
+ADMIN_PASSWORD_OVERRIDE=""
+
+if [ "${ADMIN_PASSWORD+x}" = "x" ] && [ -n "${ADMIN_PASSWORD}" ]; then
+    ADMIN_PASSWORD_EXPLICIT=1
+    ADMIN_PASSWORD_OVERRIDE="${ADMIN_PASSWORD}"
+fi
 
 print_info() { echo -e "${BLUE}[INFO]${NC} $1"; }
 print_success() { echo -e "${GREEN}[OK]${NC} $1"; }
 print_warning() { echo -e "${YELLOW}[WARN]${NC} $1"; }
 print_error() { echo -e "${RED}[ERROR]${NC} $1"; }
+
+mask_secret() {
+    local value="$1"
+    if [ "${#value}" -le 2 ]; then
+        printf '***'
+        return 0
+    fi
+    printf '%s%s%s' "${value:0:1}" "$(printf '%*s' "$(( ${#value} - 2 ))" '' | tr ' ' '*')" "${value: -1}"
+}
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." 2>/dev/null && pwd || pwd)"
@@ -188,6 +204,7 @@ copy_or_download_bundle() {
         cp "${REPO_ROOT}/deploy/README.md" "${target_dir}/README.md"
         cp "${REPO_ROOT}/scripts/deploy/update-app.sh" "${target_dir}/update-app.sh"
         cp "${REPO_ROOT}/scripts/deploy/repair-mysql.sh" "${target_dir}/repair-mysql.sh"
+        cp "${REPO_ROOT}/scripts/deploy/repair-deploy.sh" "${target_dir}/repair-deploy.sh"
         cp "${REPO_ROOT}/scripts/deploy/fresh-install.sh" "${target_dir}/fresh-install.sh"
         cp "${REPO_ROOT}/scripts/deploy/quick-deploy.sh" "${target_dir}/quick-deploy.sh"
     else
@@ -197,6 +214,7 @@ copy_or_download_bundle() {
         download_file "deploy/README.md" "${target_dir}/README.md"
         download_file "scripts/deploy/update-app.sh" "${target_dir}/update-app.sh"
         download_file "scripts/deploy/repair-mysql.sh" "${target_dir}/repair-mysql.sh"
+        download_file "scripts/deploy/repair-deploy.sh" "${target_dir}/repair-deploy.sh"
         download_file "scripts/deploy/fresh-install.sh" "${target_dir}/fresh-install.sh"
         download_file "scripts/deploy/quick-deploy.sh" "${target_dir}/quick-deploy.sh"
     fi
@@ -204,6 +222,7 @@ copy_or_download_bundle() {
     cp "${target_dir}/.env.example" "${target_dir}/.env"
     chmod +x "${target_dir}/update-app.sh"
     chmod +x "${target_dir}/repair-mysql.sh"
+    chmod +x "${target_dir}/repair-deploy.sh"
     chmod +x "${target_dir}/fresh-install.sh"
     chmod +x "${target_dir}/quick-deploy.sh"
 }
@@ -261,7 +280,7 @@ load_deploy_env() {
 
 get_required_images() {
     printf '%s\n' \
-        "${APP_IMAGE:-smdk000/qq-farm-bot-ui:4.5.16}" \
+        "${APP_IMAGE:-smdk000/qq-farm-bot-ui:4.5.17}" \
         "${MYSQL_IMAGE:-mysql:8.0}" \
         "${REDIS_IMAGE:-redis:7-alpine}" \
         "${IPAD860_IMAGE:-smdk000/ipad860:latest}"
@@ -425,6 +444,51 @@ mark_current_release() {
     run_root ln -sfn "${target_dir}" "${CURRENT_LINK}"
 }
 
+apply_admin_password_override() {
+    if [ "${ADMIN_PASSWORD_EXPLICIT}" != "1" ] || [ -z "${ADMIN_PASSWORD_OVERRIDE}" ]; then
+        return 0
+    fi
+
+    print_info "检测到显式 ADMIN_PASSWORD，正在同步 admin 账号密码..."
+    "${DOCKER[@]}" compose exec -T -e ADMIN_PASSWORD="${ADMIN_PASSWORD_OVERRIDE}" "${APP_SERVICE}" node - <<'NODE'
+const password = String(process.env.ADMIN_PASSWORD || '');
+if (!password) {
+    process.exit(0);
+}
+
+const security = require('./src/services/security');
+const { getPool } = require('./src/services/mysql-db');
+
+(async () => {
+    const pool = getPool();
+    const passwordHash = security.hashPassword(password);
+    const [rows] = await pool.query('SELECT id FROM users WHERE username = ? LIMIT 1', ['admin']);
+
+    if (rows.length > 0) {
+        await pool.query(
+            'UPDATE users SET password_hash = ?, role = ?, status = ? WHERE username = ?',
+            [passwordHash, 'admin', 'active', 'admin']
+        );
+        console.log('[deploy] admin password updated');
+        return;
+    }
+
+    await pool.query(
+        'INSERT INTO users (username, password_hash, role, status) VALUES (?, ?, ?, ?)',
+        ['admin', passwordHash, 'admin', 'active']
+    );
+    console.log('[deploy] admin password created');
+})().catch((err) => {
+    console.error(err && err.message ? err.message : String(err));
+    process.exit(1);
+});
+NODE
+
+    local masked
+    masked="$(mask_secret "${ADMIN_PASSWORD_OVERRIDE}")"
+    print_success "管理员密码已同步到数据库: ${masked}"
+}
+
 main() {
     parse_args "$@"
 
@@ -479,6 +543,7 @@ main() {
     print_info "执行 MySQL 结构修复脚本..."
     "${DEPLOY_DIR}/repair-mysql.sh" --deploy-dir "${DEPLOY_DIR}"
     wait_for_container "qq-farm-bot" 240
+    apply_admin_password_override
 
     if command -v curl >/dev/null 2>&1; then
         curl -fsS "http://127.0.0.1:${web_port}/api/ping" >/dev/null 2>&1 || print_warning "接口探活未通过，请稍后执行: curl http://127.0.0.1:${web_port}/api/ping"
@@ -493,6 +558,7 @@ main() {
     echo "目录: ${DEPLOY_DIR}"
     echo "当前版本链接: ${CURRENT_LINK}"
     echo "访问地址: http://$(hostname -I 2>/dev/null | awk '{print $1}' || echo 'localhost'):${web_port}"
+    echo "部署包修复脚本: ${CURRENT_LINK}/repair-deploy.sh"
     echo "数据库修复脚本: ${CURRENT_LINK}/repair-mysql.sh"
     echo "默认管理员: admin"
     echo "管理员密码: 见 ${DEPLOY_DIR}/.env 中的 ADMIN_PASSWORD"

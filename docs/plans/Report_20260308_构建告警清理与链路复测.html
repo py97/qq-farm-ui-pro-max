@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>2026-03-08 构建告警清理与链路复测报告</title>
+  <style>
+    :root {
+      --bg: #f4f7fb;
+      --card: #ffffff;
+      --text: #17202a;
+      --muted: #5b6978;
+      --line: #d9e2ec;
+      --ok: #127a52;
+      --warn: #9a6700;
+      --bad: #b42318;
+      --accent: #1459c7;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "PingFang SC", "Microsoft YaHei", sans-serif;
+      background: linear-gradient(180deg, #edf3fb 0%, var(--bg) 100%);
+      color: var(--text);
+      line-height: 1.6;
+    }
+    .wrap {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 32px 20px 64px;
+    }
+    h1, h2, h3, p { margin: 0; }
+    .hero {
+      padding: 28px;
+      border-radius: 20px;
+      background: linear-gradient(135deg, #123b7a 0%, #1f6ad3 100%);
+      color: #fff;
+      box-shadow: 0 18px 40px rgba(20, 89, 199, 0.18);
+    }
+    .hero p { margin-top: 10px; color: rgba(255,255,255,0.86); }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 14px;
+      margin-top: 18px;
+    }
+    .metric, .card {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 18px 20px;
+      box-shadow: 0 10px 24px rgba(16, 24, 40, 0.04);
+    }
+    .metric strong {
+      display: block;
+      font-size: 28px;
+      margin-top: 8px;
+      color: var(--accent);
+    }
+    .section {
+      margin-top: 18px;
+    }
+    .section h2 {
+      font-size: 20px;
+      margin-bottom: 12px;
+    }
+    .list {
+      margin: 0;
+      padding-left: 20px;
+    }
+    .list li + li {
+      margin-top: 8px;
+    }
+    .status {
+      display: inline-block;
+      padding: 2px 10px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .ok { background: rgba(18,122,82,0.12); color: var(--ok); }
+    .warn { background: rgba(154,103,0,0.12); color: var(--warn); }
+    .bad { background: rgba(180,35,24,0.12); color: var(--bad); }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      overflow: hidden;
+      border-radius: 14px;
+      border: 1px solid var(--line);
+      background: var(--card);
+    }
+    th, td {
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--line);
+      text-align: left;
+      vertical-align: top;
+      font-size: 14px;
+    }
+    th {
+      background: #f8fbff;
+      color: #355070;
+    }
+    tr:last-child td { border-bottom: none; }
+    code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      background: #eef4ff;
+      color: #234;
+      padding: 1px 6px;
+      border-radius: 6px;
+    }
+    .foot {
+      margin-top: 18px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <section class="hero">
+      <h1>构建告警清理与链路复测报告</h1>
+      <p>生成时间：2026-03-08。范围覆盖 Web 构建告警、账号持久化、账号启动/重启逻辑、管理员前端实测与当前真实农场连接状态。</p>
+    </section>
+
+    <section class="grid">
+      <div class="metric">
+        <div>构建告警</div>
+        <strong>已清零</strong>
+        <div class="foot">`pnpm build:web` 与 `vue-tsc -b` 通过，UnoCSS 图标和动态导入告警已收口。</div>
+      </div>
+      <div class="metric">
+        <div>账号持久化缺陷</div>
+        <strong>已修复</strong>
+        <div class="foot">`1005` 的 QQ UIN 现在可写回 MySQL，重启后不会再次丢失。</div>
+      </div>
+      <div class="metric">
+        <div>运行态误判</div>
+        <strong>已修复</strong>
+        <div class="foot">已停机账号不再因异步判断错误被误判成“运行中并自动重启”。</div>
+      </div>
+      <div class="metric">
+        <div>真实农场连接</div>
+        <strong>仍阻塞</strong>
+        <div class="foot">两个账号当前都被远端 WebSocket 直接返回 HTTP 400，属于外部凭证/握手层阻塞。</div>
+      </div>
+    </section>
+
+    <section class="section card">
+      <h2>本轮修复项</h2>
+      <ul class="list">
+        <li><span class="status ok">已修复</span> 替换无效 UnoCSS 图标名，并关闭 source-scan 误报，消除构建时的图标告警。</li>
+        <li><span class="status ok">已修复</span> 去掉 <code>web/src/utils/auth.ts</code> 中的动态导入，改成注销钩子注册，消除 Rollup 动态/静态混用告警。</li>
+        <li><span class="status ok">已修复</span> QQ 扫码创建与轮询接口强制要求传入 UIN，避免创建出 <code>platform=qq</code> 但 <code>uin</code> 为空的坏账号。</li>
+        <li><span class="status ok">已修复</span> 账号保存逻辑的 MySQL UPSERT 现在会持久化 <code>uin</code>、<code>avatar</code> 等关键字段，修复“内存改了、重启又丢”的问题。</li>
+        <li><span class="status ok">已修复</span> 管理端更新账号时，<code>provider.isAccountRunning()</code> 已改为 <code>await</code>，避免把 Promise 当布尔值导致误重启。</li>
+        <li><span class="status ok">已修复</span> 启动/重启账号时改为“DB 补缺、内存值优先”，防止旧数据库值覆盖刚更新的新值。</li>
+        <li><span class="status ok">已修复</span> 登录页用户名/卡密输入补齐 <code>autocomplete</code>，新页面加载后控制台不再出现该告警。</li>
+      </ul>
+    </section>
+
+    <section class="section">
+      <h2>复测结果</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>测试项</th>
+            <th>结果</th>
+            <th>说明</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Web 类型检查</td>
+            <td><span class="status ok">通过</span></td>
+            <td><code>pnpm -C web exec vue-tsc -b</code> 多次执行通过。</td>
+          </tr>
+          <tr>
+            <td>Web 构建</td>
+            <td><span class="status ok">通过</span></td>
+            <td><code>pnpm build:web</code> 通过，无 UnoCSS 图标告警，无动态导入告警。</td>
+          </tr>
+          <tr>
+            <td>QQ 账号 1005 持久化</td>
+            <td><span class="status ok">通过</span></td>
+            <td>补入 <code>uin=3400470486</code> 后，直接查询 MySQL 账号表已能读回该值；重启 3010 后发起握手时实际带上了 <code>openID=3400470486</code>。</td>
+          </tr>
+          <tr>
+            <td>账号页状态展示</td>
+            <td><span class="status ok">通过</span></td>
+            <td>管理员前端实测确认两个账号均展示为“已停止”，<code>1005</code> 卡片显示正确 QQ 号，不再误导成运行中。</td>
+          </tr>
+          <tr>
+            <td>管理员菜单与普通用户隔离</td>
+            <td><span class="status ok">通过</span></td>
+            <td>浏览器上下文中旧普通用户视角仍无管理员菜单；切到管理员账号后菜单完整出现，符合角色预期。</td>
+          </tr>
+          <tr>
+            <td>真实农场连接</td>
+            <td><span class="status bad">未通过</span></td>
+            <td><code>1005</code> 与 <code>30</code> 当前都在远端握手阶段收到 <code>Unexpected server response: 400</code>。这一步已不再是本地字段缺失，而是外部凭证/握手有效性问题。</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section class="section card">
+      <h2>关键证据</h2>
+      <ul class="list">
+        <li>重启后的 3010 运行日志中，<code>1005</code> 已使用 <code>openID=3400470486</code> 发起 QQ 握手，不再出现“QQ账号缺少UIN”。</li>
+        <li>管理员 API <code>/api/accounts</code> 当前返回：账号 <code>30</code> 与 <code>1005</code> 均为 <code>running:false</code>、<code>connected:false</code>、<code>wsError.code=400</code>。</li>
+        <li>Playwright 前端实测确认账号管理页显示：
+          <code>尤隔情窗唤梦回 / QQ: 571570659 / 已停止</code>，
+          <code>账号1005 / QQ: 3400470486 / 已停止</code>。</li>
+      </ul>
+    </section>
+
+    <section class="section card">
+      <h2>剩余阻塞与判断</h2>
+      <ul class="list">
+        <li><span class="status warn">外部阻塞</span> 当前两个账号的登录 Code 都不能完成真实 WebSocket 握手，服务端直接返回 HTTP 400。这个结论已经通过原始握手探测与真实运行日志双重确认。</li>
+        <li><span class="status warn">需要人工配合</span> 如果要继续做真实农场链路复测，需要你现在重新扫码更新至少一个账号，然后我立即在当前 3010 实例上复测，避免 code 在短时间内失效。</li>
+        <li><span class="status warn">暂不推送</span> 另一个线程尚未同步结束，且真实账号链路仍有外部阻塞，所以当前不适合执行 Git 提交、推送或 Docker 推送。</li>
+      </ul>
+    </section>
+
+    <section class="section card">
+      <h2>建议的下一步</h2>
+      <ol class="list">
+        <li>你现在重新扫码更新 <code>1005</code> 或新建一个新账号，我保持本地 3010 运行，收到后立刻复测真实连接。</li>
+        <li>一旦任一账号恢复可连接，我继续做农场、好友、工作流、设置生效与异常恢复的完整实测闭环。</li>
+        <li>等另一个线程同步结束且真实链路验证通过后，再统一执行 Git 提交、推送和 Docker 相关动作。</li>
+      </ol>
+    </section>
+  </div>
+</body>
+</html>
